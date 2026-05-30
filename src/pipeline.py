@@ -18,6 +18,7 @@ import config
 from src.asr import JapaneseASR
 from src.audio_capture import AudioCapture
 from src.display import SubtitleDisplay
+from src.local_agreement import LocalAgreementBuffer
 from src.translator import NllbTranslator
 from src.vad import VadSegmenter
 
@@ -133,7 +134,8 @@ class TranslationPipeline:
         recognizer detects an endpoint the segment is committed and handed to the
         translator. This keeps the source text latency at roughly one audio block.
         """
-        last_partial = ""
+        agreement = LocalAgreementBuffer(config.STREAMING_LOCAL_AGREEMENT_N)
+        last_displayed: tuple[str, str] = ("", "")
         while not self.stop_event.is_set():
             try:
                 block = self._audio_queue.get(timeout=0.2)
@@ -142,15 +144,18 @@ class TranslationPipeline:
             try:
                 self.streaming_asr.accept(block)
                 partial = self.streaming_asr.partial()
-                if partial and partial != last_partial:
-                    self.display.show_source_partial(partial)
-                    last_partial = partial
+                if partial:
+                    committed, tail = agreement.update(partial)
+                    if (committed, tail) != last_displayed:
+                        self.display.show_source_partial(committed, tail)
+                        last_displayed = (committed, tail)
                 if self.streaming_asr.at_endpoint():
                     if partial:
                         self.display.finalize_source(partial)
                         self._enqueue_text(partial)
                     self.streaming_asr.reset()
-                    last_partial = ""
+                    agreement.reset()
+                    last_displayed = ("", "")
             except Exception as exc:  # keep the pipeline alive on a single bad block
                 self.display.info(f"[ASR error] {exc}")
 

@@ -50,8 +50,8 @@ class RecordingDisplay(SubtitleDisplay):
         self.finals: list[str] = []
         self.targets: list[str] = []
 
-    def show_source_partial(self, japanese: str) -> None:
-        self.partials.append(japanese)
+    def show_source_partial(self, committed: str, tail: str = "") -> None:
+        self.partials.append(committed + tail)
 
     def finalize_source(self, japanese: str) -> None:
         self.finals.append(japanese)

@@ -52,16 +52,31 @@ STREAMING_RULE1_SILENCE = 2.4    # finalize after this silence even with no deco
 STREAMING_RULE2_SILENCE = 0.7    # finalize after this silence once words decoded
 STREAMING_RULE3_UTTERANCE = 7.0  # force a segment boundary after this length
 
+# LocalAgreement-2 commit policy for the live partial. A character/word is only
+# "committed" (shown solid, never rewritten) once it has appeared unchanged in
+# this many consecutive partial hypotheses. The still-volatile tail is shown dim.
+# This removes the flicker/stale-fragment garbage of re-rendering the full
+# hypothesis every chunk. 1 disables it (commit everything immediately).
+STREAMING_LOCAL_AGREEMENT_N = 2
+
 # ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
 NLLB_SOURCE_LANG = "jpn_Jpan"   # Japanese (Kanji + Kana)
 NLLB_TARGET_LANG = "vie_Latn"   # Vietnamese (Latin script)
-NLLB_BEAM_SIZE = 1              # greedy decode = lowest latency for live captions
+NLLB_BEAM_SIZE = int(os.environ.get("NLLB_BEAM_SIZE", "4"))  # beam search: +1-3 BLEU vs greedy
 NLLB_INTER_THREADS = 1
 NLLB_INTRA_THREADS = int(os.environ.get("NLLB_INTRA_THREADS", "4"))
 NLLB_COMPUTE_TYPE = "int8"
 NLLB_MAX_INPUT_LENGTH = 512
 NLLB_MAX_DECODING_LENGTH = 256
+# Anti-repetition / quality knobs applied to CTranslate2 decoding. These fix the
+# observed "Tôi xin xin" 2-gram loops, dropped trailing words, and empty outputs:
+#   - no_repeat_ngram_size: forbid repeating any n-gram of this size (kills loops)
+#   - repetition_penalty: >1.0 discourages re-emitting recent tokens
+#   - min_decoding_length: force at least this many target tokens (avoids "")
+NLLB_NO_REPEAT_NGRAM_SIZE = 2
+NLLB_REPETITION_PENALTY = 1.1
+NLLB_MIN_DECODING_LENGTH = 2
 
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
 NLLB_CT2_HF_REPO = "entai2965/nllb-200-distilled-600M-ctranslate2"

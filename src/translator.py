@@ -52,8 +52,11 @@ class NllbTranslator:
         results = self.translator.translate_batch(
             [source_tokens],
             target_prefix=[target_prefix],
-            # A small beam keeps translation latency low enough for live meetings.
+            # Beam search improves accuracy while anti-repetition knobs prevent live-caption loops.
             beam_size=config.NLLB_BEAM_SIZE,
+            repetition_penalty=config.NLLB_REPETITION_PENALTY,
+            no_repeat_ngram_size=config.NLLB_NO_REPEAT_NGRAM_SIZE,
+            min_decoding_length=config.NLLB_MIN_DECODING_LENGTH,
             max_decoding_length=config.NLLB_MAX_DECODING_LENGTH,
             max_input_length=config.NLLB_MAX_INPUT_LENGTH,
         )

@@ -113,19 +113,37 @@ class SubtitleDisplay:
         with self._lock:
             print(f"{self._clear_partial()}{vi_line}", flush=True)
 
-    def show_source_partial(self, japanese: str) -> None:
-        """Overwrite the current line with the latest in-progress Japanese.
+    @classmethod
+    def _truncate_segments(cls, committed: str, tail: str, max_width: int) -> tuple[str, str, str]:
+        """Truncate committed/tail text as one line while preserving segments."""
+        text = committed + tail
+        shown = cls._truncate_tail(text, max_width)
+        marker = "…" if shown.startswith("…") and not text.startswith(shown) else ""
+        visible = shown[1:] if marker else shown
+        committed_start = max(0, len(text) - len(visible))
+        committed_end = len(committed)
+        shown_committed = visible[: max(0, committed_end - committed_start)]
+        shown_tail = visible[len(shown_committed) :]
+        return marker, shown_committed, shown_tail
 
-        Used by the streaming recognizer to show text as it is being spoken
-        (YouTube-style live captions). The line is rewritten in place via a
-        carriage return until :meth:`finalize_source` commits it.
+    def _partial_line(self, committed: str, tail: str, max_width: int) -> str:
+        marker, shown_committed, shown_tail = self._truncate_segments(committed, tail, max_width)
+        if not self._color:
+            return f"JP… {marker}{shown_committed}{shown_tail}"
+        solid = f"JP… {marker}{shown_committed}"
+        if not shown_tail:
+            return self._wrap(solid, _JP_COLOR)
+        return f"{self._wrap(solid, _JP_COLOR)}{_DIM}{shown_tail}{_RESET}"
 
-        The partial is truncated to the terminal width (showing the newest tail)
-        so it always occupies a single physical line — otherwise a long line
-        wraps and ``\\r``/``\\033[K`` can only clear the last wrapped row, leaving
-        stale fragments that pile up into garbage like ``JP… x  JP… x  JP… x``.
+    def show_source_partial(self, committed: str, tail: str = "") -> None:
+        """Overwrite the current line with stable + volatile in-progress Japanese.
+
+        ``committed`` is shown in the normal Japanese colour and will not be
+        rewritten by the streaming pipeline. ``tail`` is still volatile ASR text
+        and is rendered dim. Both segments are truncated together to the terminal
+        width so the partial always occupies a single physical line.
         """
-        if not japanese:
+        if not committed and not tail:
             return
         # When output is not a terminal (piped/redirected), in-place rewriting
         # produces control-character junk; skip partials and rely on finals.
@@ -134,8 +152,7 @@ class SubtitleDisplay:
         prefix = "  JP… "
         cols = shutil.get_terminal_size((80, 24)).columns
         avail = max(0, cols - self._display_width(prefix) - 1)  # spare column avoids wrap
-        shown = self._truncate_tail(japanese, avail)
-        jp_line = self._wrap(f"JP… {shown}", _JP_COLOR)
+        jp_line = self._partial_line(committed, tail, avail)
         with self._lock:
             # \r returns to column 0; \033[K clears to end of line.
             print(f"\r\033[K  {jp_line}", end="", flush=True)
