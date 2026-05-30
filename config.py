@@ -25,10 +25,13 @@ CAPTURE_QUEUE_MAXSIZE = 64    # drop-oldest beyond this to bound latency
 VAD_AGGRESSIVENESS = 2
 VAD_FRAME_MS = 30             # webrtcvad supports 10 / 20 / 30 ms frames
 # End an utterance after this much trailing silence (lower = lower latency).
-VAD_SILENCE_MS = 600
-# Ignore utterances shorter / longer than these bounds.
+VAD_SILENCE_MS = 450
+# Ignore utterances shorter / longer than these bounds. The upper bound also
+# force-flushes long continuous speech so it is transcribed and translated in
+# bounded chunks instead of waiting for a pause — this keeps latency predictable
+# (translation cost grows with input length) during a fast-talking meeting.
 VAD_MIN_UTTERANCE_MS = 300
-VAD_MAX_UTTERANCE_MS = 12_000
+VAD_MAX_UTTERANCE_MS = 7_000
 
 # ─── ASR (ReazonSpeech k2 via sherpa-onnx) ───────────────────────────────
 ASR_NUM_THREADS = int(os.environ.get("ASR_NUM_THREADS", "4"))
@@ -38,7 +41,7 @@ ASR_PROVIDER = "cpu"
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
 NLLB_SOURCE_LANG = "jpn_Jpan"   # Japanese (Kanji + Kana)
 NLLB_TARGET_LANG = "vie_Latn"   # Vietnamese (Latin script)
-NLLB_BEAM_SIZE = 2              # low beam = lower latency (1-2 recommended for real-time)
+NLLB_BEAM_SIZE = 1              # greedy decode = lowest latency for live captions
 NLLB_INTER_THREADS = 1
 NLLB_INTRA_THREADS = int(os.environ.get("NLLB_INTRA_THREADS", "4"))
 NLLB_COMPUTE_TYPE = "int8"

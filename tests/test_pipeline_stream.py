@@ -34,15 +34,31 @@ def load_wav_float32(path: Path) -> np.ndarray:
 
 
 class RecordingDisplay(SubtitleDisplay):
-    """Capture subtitle pairs while still printing them."""
+    """Capture subtitle pairs while still printing them.
+
+    The pipeline now prints the Japanese line as soon as ASR completes
+    (``show_source``) and the Vietnamese line when translation finishes
+    (``show_target``), so we pair the most recent source with its target.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.pairs: list[tuple[str, str]] = []
+        self._pending_ja: str | None = None
 
     def show(self, japanese: str, vietnamese: str) -> None:
         self.pairs.append((japanese, vietnamese))
         super().show(japanese, vietnamese)
+
+    def show_source(self, japanese: str) -> None:
+        self._pending_ja = japanese
+        super().show_source(japanese)
+
+    def show_target(self, vietnamese: str) -> None:
+        if self._pending_ja is not None:
+            self.pairs.append((self._pending_ja, vietnamese))
+            self._pending_ja = None
+        super().show_target(vietnamese)
 
 
 class FakeCapture(threading.Thread):

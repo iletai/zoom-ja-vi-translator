@@ -31,13 +31,32 @@ class SubtitleDisplay:
         return f"{color}{text}{_RESET}"
 
     def show(self, japanese: str, vietnamese: str) -> None:
-        """Print one timestamped Japanese -> Vietnamese subtitle pair."""
+        """Print one timestamped Japanese -> Vietnamese subtitle pair (one-shot)."""
         timestamp = time.strftime("%H:%M:%S")
         header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
         jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
         vi_line = "  " + self._wrap(f"VI {vietnamese}", _VI_COLOR)
         with self._lock:
             print(f"\n{header}\n{jp_line}\n{vi_line}", flush=True)
+
+    def show_source(self, japanese: str) -> None:
+        """Print the recognized Japanese immediately, before translation is ready.
+
+        Showing the source line as soon as ASR completes drastically cuts the
+        *perceived* latency in a live meeting: the viewer sees what was just said
+        within ~2 s, then the Vietnamese line follows when the translator finishes.
+        """
+        timestamp = time.strftime("%H:%M:%S")
+        header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
+        jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
+        with self._lock:
+            print(f"\n{header}\n{jp_line}", flush=True)
+
+    def show_target(self, vietnamese: str) -> None:
+        """Print the Vietnamese line for the most recently shown source utterance."""
+        vi_line = "  " + self._wrap(f"VI {vietnamese}", _VI_COLOR)
+        with self._lock:
+            print(vi_line, flush=True)
 
     def info(self, message: str) -> None:
         """Print a status/diagnostic line."""

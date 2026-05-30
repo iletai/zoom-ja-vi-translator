@@ -64,6 +64,9 @@ class TranslationPipeline:
         japanese = self.asr.transcribe(utterance).strip()
         if not japanese:
             return
+        # Show the recognized Japanese immediately so the viewer sees what was
+        # said without waiting for the (slower) translation stage to finish.
+        self.display.show_source(japanese)
         # Lock makes the drop-oldest get+put atomic against the consumer, so a
         # concurrent take cannot cause us to drop an extra (still-fresh) item.
         with self._text_queue_lock:
@@ -92,7 +95,9 @@ class TranslationPipeline:
             except Exception as exc:
                 self.display.info(f"[Translate error] {exc}")
                 continue
-            self.display.show(japanese, vietnamese or "(...)")
+            # The Japanese line was already shown by the ASR stage; print only the
+            # Vietnamese line so the pair reads naturally without re-printing JP.
+            self.display.show_target(vietnamese or "(...)")
 
     # ─── Lifecycle ───────────────────────────────────────────────────────
     def start(self) -> None:
