@@ -184,6 +184,11 @@ class TranslationPipeline:
             and idle_sec <= config.STREAM_SENTENCE_MAX_WAIT_SEC
         ):
             return
+        # Don't emit a low-content dangling fragment (が/かと/から/…) on its own;
+        # keep it buffered so it merges with the next utterance instead of
+        # producing garbage like 「かと」 -> "Không, không.".
+        if self.aggregator.is_dangling(pending):
+            return
         for sentence in self.aggregator.flush():
             self._last_stream_text_at = monotonic()
             self._enqueue_text(sentence, pre_shown=False)

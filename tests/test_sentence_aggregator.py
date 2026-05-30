@@ -63,6 +63,41 @@ def test_terminal_followed_by_connective_forms_boundary() -> None:
     assert agg.flush() == ["では箱根の温泉に行きましょう"]
 
 
+def test_multi_speaker_run_on_splits_without_clause_starter() -> None:
+    # です followed directly by えっ (no recognized starter word) must still split.
+    agg = SentenceAggregator()
+    text = (
+        "会議が午後一時からに変更になったそうなんですえっ一時間早まったの"
+        "ええですから新幹線の時間も一時間早めた方がよろしいかと"
+    )
+    out = agg.add(text)
+    assert out[0] == "会議が午後一時からに変更になったそうなんです", out
+    assert "えっ一時間早まったの" in out, out
+
+
+def test_continuation_particles_never_split() -> None:
+    for text in (
+        "部長三日の京都出張のスケジュールなんですが",
+        "これは新幹線ですからお願いします",
+        "明日ですって言っていました",
+        "便利ですものね",
+        "可能でしたらお願いします",
+        "行けるかどうか確認します",
+        "ご参加くださいましてありがとうございます",
+    ):
+        agg = SentenceAggregator()
+        assert agg.add(text) == [], f"should not split: {text}"
+        assert agg.pending() == text
+
+
+def test_dangling_fragment_detection() -> None:
+    agg = SentenceAggregator()
+    assert agg.is_dangling("かと")
+    assert agg.is_dangling("が")
+    assert not agg.is_dangling("はい")
+    assert not agg.is_dangling("分かりました")
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
