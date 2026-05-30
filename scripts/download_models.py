@@ -23,6 +23,14 @@ except ImportError:  # pragma: no cover - exercised only when dependency is miss
 # ever moved, change only this constant.
 ASR_HF_REPO = "reazon-research/reazonspeech-k2-v2"
 
+# Multilingual streaming (online) zipformer used by the optional --streaming mode.
+# Emits partial hypotheses for low-latency live captions; covers Japanese.
+STREAMING_ASR_HF_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10"
+STREAMING_ASR_ALLOW_PATTERNS = [
+    "*chunk-16-left-128*.onnx",
+    "tokens.txt",
+]
+
 # Canonical sherpa-onnx int8 configuration for this model: the encoder and
 # joiner are int8-quantized, but the decoder stays fp32 (.onnx, not .int8.onnx).
 # Downloading these four files (~150 MB) avoids pulling the full ~775 MB repo.
@@ -51,6 +59,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--asr-only", action="store_true", help="download only the ASR model")
     parser.add_argument("--nllb-only", action="store_true", help="download/prepare only the NLLB model")
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="also download the multilingual streaming ASR model (for --streaming mode)",
+    )
     parser.add_argument(
         "--convert",
         action="store_true",
@@ -217,6 +230,25 @@ def convert_nllb(force: bool) -> str:
     return "converted"
 
 
+def download_streaming_asr(force: bool) -> str:
+    print(f"\n[Streaming ASR] sherpa-onnx online zipformer repo: {STREAMING_ASR_HF_REPO}")
+    if not prepare_target_dir(config.STREAMING_ASR_MODEL_DIR, force):
+        print_asr_artifacts(config.STREAMING_ASR_MODEL_DIR)
+        return "skipped"
+
+    snapshot_download(
+        repo_id=STREAMING_ASR_HF_REPO,
+        local_dir=config.STREAMING_ASR_MODEL_DIR,
+        allow_patterns=STREAMING_ASR_ALLOW_PATTERNS,
+    )
+    print_asr_artifacts(config.STREAMING_ASR_MODEL_DIR)
+    print(
+        f"[Streaming ASR] Done: {config.STREAMING_ASR_MODEL_DIR} "
+        f"({format_size(directory_size(config.STREAMING_ASR_MODEL_DIR))})"
+    )
+    return "downloaded"
+
+
 def main() -> int:
     args = parse_args()
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
@@ -228,6 +260,8 @@ def main() -> int:
             statuses["ASR"] = download_asr(force=args.force)
         if not args.asr_only:
             statuses["NLLB"] = convert_nllb(force=args.force) if args.convert else download_nllb_preconverted(force=args.force)
+        if args.streaming:
+            statuses["Streaming ASR"] = download_streaming_asr(force=args.force)
     except ModelDownloadError as exc:
         print(f"\nERROR: {exc}", file=sys.stderr)
         return 1

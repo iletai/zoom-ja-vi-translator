@@ -1,5 +1,6 @@
 # Virtual environments
 .venv/
+.venv-arm64/
 venv/
 env/
 

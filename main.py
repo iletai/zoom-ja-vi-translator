@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="explicit device index from --list-devices",
     )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="use the online streaming recognizer for low-latency live captions "
+        "(shows Japanese as it is spoken; slightly lower accuracy than the default)",
+    )
     return parser.parse_args()
 
 
@@ -89,13 +95,14 @@ def main() -> int:
     from src.pipeline import TranslationPipeline
 
     try:
-        pipeline = TranslationPipeline(device=device, display=display)
+        pipeline = TranslationPipeline(device=device, display=display, streaming=args.streaming)
     except FileNotFoundError as exc:
         display.info(str(exc))
         return 1
 
+    mode = "streaming" if args.streaming else "offline"
     display.info(
-        f"Listening... ({config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}). "
+        f"Listening [{mode}]... ({config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}). "
         "Press Ctrl+C to stop."
     )
     pipeline.run_forever()

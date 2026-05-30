@@ -58,6 +58,29 @@ class SubtitleDisplay:
         with self._lock:
             print(vi_line, flush=True)
 
+    def show_source_partial(self, japanese: str) -> None:
+        """Overwrite the current line with the latest in-progress Japanese.
+
+        Used by the streaming recognizer to show text as it is being spoken
+        (YouTube-style live captions). The line is rewritten in place via a
+        carriage return until :meth:`finalize_source` commits it.
+        """
+        if not japanese:
+            return
+        jp_line = self._wrap(f"JP… {japanese}", _JP_COLOR)
+        with self._lock:
+            # \r returns to column 0; \033[K clears to end of line.
+            print(f"\r\033[K  {jp_line}", end="", flush=True)
+
+    def finalize_source(self, japanese: str) -> None:
+        """Commit the streamed Japanese line (print the final text + newline)."""
+        timestamp = time.strftime("%H:%M:%S")
+        header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
+        jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
+        with self._lock:
+            # Clear the in-progress partial line, then print the committed pair.
+            print(f"\r\033[K{header}\n{jp_line}", flush=True)
+
     def info(self, message: str) -> None:
         """Print a status/diagnostic line."""
         with self._lock:

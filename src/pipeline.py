@@ -25,9 +25,10 @@ from src.vad import VadSegmenter
 class TranslationPipeline:
     """Wire audio capture, segmentation, ASR and translation together."""
 
-    def __init__(self, device: object, display: SubtitleDisplay) -> None:
+    def __init__(self, device: object, display: SubtitleDisplay, streaming: bool = False) -> None:
         self.device = device
         self.display = display
+        self.streaming = streaming
         self.stop_event = threading.Event()
 
         self._audio_queue: queue.Queue = queue.Queue(maxsize=config.CAPTURE_QUEUE_MAXSIZE)
@@ -37,13 +38,22 @@ class TranslationPipeline:
         self._text_queue_lock = threading.Lock()
 
         self.display.info("Loading models (ASR + translator)...")
-        self.asr = JapaneseASR()
         self.translator = NllbTranslator()
-        self.segmenter = VadSegmenter()
+        if self.streaming:
+            from src.streaming_asr import StreamingJapaneseASR
+
+            self.asr = None
+            self.segmenter = None
+            self.streaming_asr = StreamingJapaneseASR()
+        else:
+            self.asr = JapaneseASR()
+            self.segmenter = VadSegmenter()
+            self.streaming_asr = None
         self.display.info("Models ready.")
 
         self._capture = AudioCapture(self.device, self._audio_queue, self.stop_event)
-        self._asr_thread = threading.Thread(target=self._asr_worker, daemon=True)
+        asr_target = self._streaming_asr_worker if self.streaming else self._asr_worker
+        self._asr_thread = threading.Thread(target=asr_target, daemon=True)
         self._translate_thread = threading.Thread(target=self._translate_worker, daemon=True)
 
     # ─── Workers ─────────────────────────────────────────────────────────
@@ -60,6 +70,34 @@ class TranslationPipeline:
             except Exception as exc:  # keep the pipeline alive on a single bad block
                 self.display.info(f"[ASR error] {exc}")
 
+    def _streaming_asr_worker(self) -> None:
+        """Stream audio into the online recognizer, showing live partials.
+
+        The recognized Japanese is rewritten in place as it is spoken; when the
+        recognizer detects an endpoint the segment is committed and handed to the
+        translator. This keeps the source text latency at roughly one audio block.
+        """
+        last_partial = ""
+        while not self.stop_event.is_set():
+            try:
+                block = self._audio_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            try:
+                self.streaming_asr.accept(block)
+                partial = self.streaming_asr.partial()
+                if partial and partial != last_partial:
+                    self.display.show_source_partial(partial)
+                    last_partial = partial
+                if self.streaming_asr.at_endpoint():
+                    if partial:
+                        self.display.finalize_source(partial)
+                        self._enqueue_text(partial)
+                    self.streaming_asr.reset()
+                    last_partial = ""
+            except Exception as exc:  # keep the pipeline alive on a single bad block
+                self.display.info(f"[ASR error] {exc}")
+
     def _transcribe_and_enqueue(self, utterance) -> None:
         japanese = self.asr.transcribe(utterance).strip()
         if not japanese:
@@ -67,6 +105,9 @@ class TranslationPipeline:
         # Show the recognized Japanese immediately so the viewer sees what was
         # said without waiting for the (slower) translation stage to finish.
         self.display.show_source(japanese)
+        self._enqueue_text(japanese)
+
+    def _enqueue_text(self, japanese: str) -> None:
         # Lock makes the drop-oldest get+put atomic against the consumer, so a
         # concurrent take cannot cause us to drop an extra (still-fresh) item.
         with self._text_queue_lock:
@@ -143,11 +184,14 @@ class TranslationPipeline:
 
         # Flush any trailing in-progress utterance so the last words aren't lost.
         try:
-            tail = self.segmenter.flush()
-            if tail is not None:
-                japanese = self.asr.transcribe(tail).strip()
-                if japanese:
-                    vietnamese = self.translator.translate(japanese).strip()
-                    self.display.show(japanese, vietnamese or "(...)")
+            if self.streaming:
+                self.streaming_asr.finalize_tail()
+                japanese = self.streaming_asr.partial().strip()
+            else:
+                tail = self.segmenter.flush()
+                japanese = self.asr.transcribe(tail).strip() if tail is not None else ""
+            if japanese:
+                vietnamese = self.translator.translate(japanese).strip()
+                self.display.show(japanese, vietnamese or "(...)")
         except Exception:
             pass

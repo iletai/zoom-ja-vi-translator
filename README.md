@@ -150,6 +150,35 @@ Press **Ctrl+C** to stop.
 
 ---
 
+## Low-latency streaming mode (recommended for live meetings)
+
+The default (offline) mode waits for a full pause before transcribing a whole
+utterance, so Japanese appears only after the speaker stops. For near-real-time
+captions, use **streaming mode**: a streaming Zipformer model emits partial
+Japanese text *while* the person is still talking, then finalizes and translates
+each sentence at the natural pause.
+
+```bash
+# One-time: download the streaming ASR model (~320 MB, includes Japanese)
+python3 scripts/download_models.py --streaming
+
+# Run with live streaming captions
+python3 main.py --system-audio --streaming
+```
+
+Trade-offs:
+
+- **Pro**: Japanese shows up almost instantly (live partial captions), so you
+  follow the conversation in real time instead of trailing 3–7 s behind.
+- **Con**: Streaming ASR is slightly less accurate than the offline model, and
+  the Vietnamese translation still goes through NLLB so it trails the Japanese
+  by the machine's MT latency (a few seconds per sentence on CPU).
+
+Test with **real Japanese speech**, not a song — singing has no sentence pauses,
+so the endpoint detector never fires and the backlog grows.
+
+---
+
 ## Verify in a real Zoom meeting
 
 1. **Start audio routing**
@@ -186,6 +215,7 @@ Edit `config.py`:
 
 | Goal | Change |
 |------|--------|
+| **Near-real-time captions** | Run with `--streaming` (live partial Japanese; see above) |
 | **Lower latency** | Reduce `VAD_SILENCE_MS` (e.g. 400); set `NLLB_BEAM_SIZE = 1` |
 | **Higher translation quality** | `NLLB_BEAM_SIZE = 4` (slower) |
 | **Less CPU / RAM** | Use fewer threads (`ASR_NUM_THREADS`, `NLLB_INTRA_THREADS`) |
@@ -207,11 +237,13 @@ zoom-translator/
 │   └── setup_macos_audio.sh  # installs BlackHole + prints routing steps
 ├── tests/
 │   ├── test_components.py     # ASR/VAD/translation on real JA wavs
-│   └── test_pipeline_stream.py # end-to-end streaming (simulated Zoom)
+│   ├── test_pipeline_stream.py # end-to-end streaming (simulated Zoom)
+│   └── test_streaming_pipeline.py # low-latency streaming ASR pipeline
 └── src/
     ├── audio_capture.py      # cross-platform loopback capture
     ├── vad.py                # silence-based utterance segmentation
     ├── asr.py                # ReazonSpeech k2 Japanese ASR
+    ├── streaming_asr.py      # streaming Zipformer JA ASR (--streaming)
     ├── translator.py         # NLLB-600M CTranslate2 JA→VI
     ├── pipeline.py           # multi-threaded orchestration
     └── display.py            # terminal subtitle output

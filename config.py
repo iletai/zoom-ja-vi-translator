@@ -37,6 +37,18 @@ VAD_MAX_UTTERANCE_MS = 7_000
 ASR_NUM_THREADS = int(os.environ.get("ASR_NUM_THREADS", "4"))
 ASR_PROVIDER = "cpu"
 
+# ─── Streaming ASR (online zipformer, opt-in via --streaming) ─────────────
+# Multilingual streaming zipformer (incl. Japanese). Emits partial hypotheses
+# as audio arrives, so the recognized text appears almost immediately instead of
+# waiting for an end-of-utterance pause. Trades a little accuracy for latency.
+STREAMING_ASR_MODEL_DIR = MODELS_DIR / "streaming-zipformer-multi"
+STREAMING_ASR_NUM_THREADS = int(os.environ.get("STREAMING_ASR_NUM_THREADS", "4"))
+# Endpoint detection (seconds). Lower rule2 = the recognizer finalizes a segment
+# sooner after a brief pause, so translation starts earlier.
+STREAMING_RULE1_SILENCE = 2.4    # finalize after this silence even with no decode
+STREAMING_RULE2_SILENCE = 0.8    # finalize after this silence once words decoded
+STREAMING_RULE3_UTTERANCE = 15.0  # force a segment boundary after this length
+
 # ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
 NLLB_SOURCE_LANG = "jpn_Jpan"   # Japanese (Kanji + Kana)
