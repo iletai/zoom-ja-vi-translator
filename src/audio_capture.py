@@ -9,7 +9,15 @@ import soundcard as sc
 import config
 
 
-_LOOPBACK_NAME_HINTS = ("blackhole", "loopback", "monitor")
+_LOOPBACK_NAME_HINTS = (
+    "blackhole",      # macOS virtual cable
+    "monitor",        # Linux PulseAudio monitor source
+    "loopback",       # generic
+    "cable",          # Windows VB-Audio Virtual Cable ("CABLE Output")
+    "vb-audio",       # Windows VB-Audio
+    "stereo mix",     # Windows legacy loopback
+    "voicemeeter",    # Windows Voicemeeter virtual output
+)
 
 
 def _device_name(device: object) -> str:
@@ -126,18 +134,66 @@ def list_devices() -> list[dict[str, object]]:
 
 
 def find_loopback_device() -> object | None:
-    """Return the best available loopback-style capture device, if any."""
+    """Return the best available loopback-style capture device, if any.
+
+    Resolution order, chosen for cross-platform parity:
+
+    1. Named virtual cables (BlackHole on macOS, PulseAudio ``monitor`` on Linux,
+       VB-Audio/"loopback" on Windows) — these are explicit "what you hear" taps.
+    2. The loopback of the *default speaker* (native WASAPI loopback on Windows,
+       where loopback mics are named after the output device, not "loopback").
+    3. Any device flagged ``isloopback``.
+    """
     devices = sc.all_microphones(include_loopback=True)
 
+    # 1. Explicit virtual-cable names (macOS BlackHole, Linux monitor, VB-Cable).
     for hint in _LOOPBACK_NAME_HINTS:
         for device in devices:
             if hint in _device_name(device).lower():
                 return device
 
+    # 2. Windows: capture exactly what the default speaker is playing.
+    default_loopback = _default_speaker_loopback(devices)
+    if default_loopback is not None:
+        return default_loopback
+
+    # 3. Any loopback-flagged device.
     for device in devices:
         if _is_loopback(device):
             return device
 
+    return None
+
+
+def _default_speaker_loopback(devices: list) -> object | None:
+    """Find the loopback microphone matching the current default speaker."""
+    try:
+        speaker = sc.default_speaker()
+    except Exception:
+        return None
+    if speaker is None:
+        return None
+
+    speaker_id = str(getattr(speaker, "id", "") or "")
+    speaker_name = _device_name(speaker).lower()
+
+    # Prefer an exact backend id match (most reliable on Windows).
+    for device in devices:
+        if _is_loopback(device) and str(getattr(device, "id", "") or "") == speaker_id:
+            return device
+
+    # Fall back to matching the loopback device by the speaker's name.
+    for device in devices:
+        if _is_loopback(device) and speaker_name and speaker_name in _device_name(device).lower():
+            return device
+
+    # Last resort: ask soundcard directly for the speaker's loopback mic.
+    try:
+        mic = sc.get_microphone(speaker_id or speaker_name, include_loopback=True)
+        if mic is not None and _is_loopback(mic):
+            return mic
+    except Exception:
+        pass
     return None
 
 

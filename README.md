@@ -53,11 +53,26 @@ This is the practical floor for local ASR+MT without a GPU.
 
 ## Installation
 
+### Quick start (one command)
+
+```bash
+cd zoom-translator
+./run.sh                 # macOS / Linux  — sets up venv, installs, downloads, runs
+# Windows (PowerShell):
+./run.ps1                # creates venv, installs, downloads models, runs
+```
+
+The launcher creates the virtualenv, installs CPU-only dependencies, downloads
+the models on first run (~1 GB, cached afterwards), and starts capturing system
+audio. Subsequent runs start instantly.
+
+### Manual setup
+
 ```bash
 cd zoom-translator
 
-# 1. Create a virtual environment
-python3 -m venv .venv
+# 1. Create a virtual environment (Python 3.9-3.12; 3.13+ has no ML wheels yet)
+python3.11 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 
 # 2. Install dependencies (CPU-only)
@@ -71,10 +86,18 @@ python3 scripts/download_models.py
 
 The tool captures the audio **you hear** from Zoom (system output), not your mic.
 
-#### macOS — install BlackHole
+#### macOS — install BlackHole (required)
 
-macOS has no built-in system-audio loopback, so install the free
-[BlackHole](https://github.com/ExistentialAudio/BlackHole) virtual device:
+macOS has **no built-in system-audio loopback** (the `soundcard` library reports
+*"macOS does not support loopback recording"*), so you must install the free
+[BlackHole](https://github.com/ExistentialAudio/BlackHole) virtual device. Run
+the helper (it installs BlackHole and prints the routing steps):
+
+```bash
+./scripts/setup_macos_audio.sh       # asks for your admin password
+```
+
+Or do it manually:
 
 ```bash
 brew install blackhole-2ch
@@ -86,12 +109,15 @@ Then route Zoom's audio through it so you still hear it **and** the app can capt
 2. Click **＋ → Create Multi-Output Device**.
 3. Check both **your speakers/headphones** and **BlackHole 2ch**.
 4. In **System Settings → Sound → Output**, select the Multi-Output Device.
-5. The app auto-detects BlackHole as the capture source.
+5. The app auto-detects BlackHole as the capture source (`--system-audio`).
 
-#### Windows — nothing to install
+#### Windows — nothing to install (native parity)
 
 `soundcard` uses **WASAPI loopback** to capture the default speaker directly.
-Just make sure Zoom plays through your default output device.
+`--system-audio` automatically selects the **loopback of your current default
+output device**, so you just make sure Zoom plays through that output. No
+VB-Cable needed (though VB-Audio / Voicemeeter / "Stereo Mix" are auto-detected
+if present).
 
 #### Linux — PulseAudio / PipeWire
 
@@ -124,6 +150,36 @@ Press **Ctrl+C** to stop.
 
 ---
 
+## Verify in a real Zoom meeting
+
+1. **Start audio routing**
+   - **macOS**: set output to the Multi-Output Device (see above) so the meeting
+     plays to your speakers *and* BlackHole.
+   - **Windows**: just ensure Zoom plays through your default speakers.
+2. **Join a Japanese Zoom meeting** (or play any Japanese audio / YouTube to test).
+3. **Run the translator** capturing system audio:
+
+   ```bash
+   ./run.sh                 # macOS/Linux
+   ./run.ps1                # Windows
+   # or: python3 main.py --system-audio
+   ```
+
+4. Confirm the right device was picked — the startup line prints e.g.
+   `Using loopback device: BlackHole 2ch` (macOS) or
+   `Using loopback device: Speakers (...)` (Windows).
+5. When someone speaks Japanese, a `🇯🇵 … / 🇻🇳 …` subtitle pair appears within a
+   few seconds.
+
+**Smoke-test without a meeting** (validates the full pipeline on real Japanese
+speech — no microphone needed):
+
+```bash
+python3 tests/test_pipeline_stream.py        # see the Testing section
+```
+
+---
+
 ## Performance Tuning
 
 Edit `config.py`:
@@ -145,8 +201,10 @@ zoom-translator/
 ├── requirements.txt
 ├── config.py                 # all tunable parameters
 ├── main.py                   # CLI entrypoint
+├── run.sh / run.ps1          # one-command launchers (macOS·Linux / Windows)
 ├── scripts/
-│   └── download_models.py    # downloads ReazonSpeech + NLLB (CT2)
+│   ├── download_models.py    # downloads ReazonSpeech + NLLB (CT2)
+│   └── setup_macos_audio.sh  # installs BlackHole + prints routing steps
 ├── tests/
 │   ├── test_components.py     # ASR/VAD/translation on real JA wavs
 │   └── test_pipeline_stream.py # end-to-end streaming (simulated Zoom)
