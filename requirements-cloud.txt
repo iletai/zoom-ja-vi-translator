@@ -1,0 +1,11 @@
+# Optional cloud backend extras (enable with: python3 main.py --system-audio --cloud azure)
+#
+# Azure Speech Translation: streaming Japanese -> Vietnamese in a single call,
+# ~0.5-1s latency, 5 audio hours/month free (F0 tier). Audio is sent to Azure.
+#
+# Setup:
+#   1. Create a free "Speech" resource at https://portal.azure.com (F0 = free tier)
+#   2. export AZURE_SPEECH_KEY=<your key>
+#   3. export AZURE_SPEECH_REGION=<your region, e.g. southeastasia>
+#   4. pip install -r requirements-cloud.txt
+azure-cognitiveservices-speech>=1.40.0

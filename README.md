@@ -179,6 +179,43 @@ so the endpoint detector never fires and the backlog grows.
 
 ---
 
+## Cloud backend — lowest latency (optional)
+
+Local CPU translation (NLLB) floors at several seconds per sentence. For
+sub-second, near-real-time captions like a streaming subtitle service, use the
+optional **Azure Speech Translation** backend: it does Japanese recognition AND
+Japanese→Vietnamese translation in a single streaming cloud call (~0.5–1 s).
+
+```bash
+# 1. Install the cloud extra
+pip install -r requirements-cloud.txt
+
+# 2. Create a free Azure "Speech" resource (F0 tier = 5 audio hours/month free)
+#    at https://portal.azure.com, then export its key + region:
+export AZURE_SPEECH_KEY=your_key_here
+export AZURE_SPEECH_REGION=southeastasia   # your resource's region
+
+# 3. Run with the cloud backend
+python3 main.py --system-audio --cloud azure
+```
+
+Trade-offs:
+
+- **Pro**: Lowest latency by far (~0.5–1 s end-to-end), best JA→VI quality, no
+  local model load, runs on minimal hardware.
+- **Con**: Audio is sent to Microsoft Azure (not offline), needs internet, and
+  costs ~$2.50/hour after the 5 free hours/month.
+
+Notes:
+
+- **DeepL is not an option** — it does not support Vietnamese.
+- **Zoom's own translated captions** do not list Vietnamese as a target either,
+  so a cloud ASR+MT backend is required for JA→VI.
+- For fully offline / zero-cost use, omit `--cloud` and stay on the local
+  backend (optionally with `--streaming`).
+
+---
+
 ## Verify in a real Zoom meeting
 
 1. **Start audio routing**
@@ -215,6 +252,7 @@ Edit `config.py`:
 
 | Goal | Change |
 |------|--------|
+| **Lowest latency (~0.5–1s)** | Run with `--cloud azure` (cloud ASR+MT; see above) |
 | **Near-real-time captions** | Run with `--streaming` (live partial Japanese; see above) |
 | **Lower latency** | Reduce `VAD_SILENCE_MS` (e.g. 400); set `NLLB_BEAM_SIZE = 1` |
 | **Higher translation quality** | `NLLB_BEAM_SIZE = 4` (slower) |
@@ -229,6 +267,7 @@ Edit `config.py`:
 ```
 zoom-translator/
 ├── requirements.txt
+├── requirements-cloud.txt    # optional Azure cloud backend extras
 ├── config.py                 # all tunable parameters
 ├── main.py                   # CLI entrypoint
 ├── run.sh / run.ps1          # one-command launchers (macOS·Linux / Windows)
@@ -244,6 +283,7 @@ zoom-translator/
     ├── vad.py                # silence-based utterance segmentation
     ├── asr.py                # ReazonSpeech k2 Japanese ASR
     ├── streaming_asr.py      # streaming Zipformer JA ASR (--streaming)
+    ├── cloud_translator.py   # Azure Speech Translation backend (--cloud azure)
     ├── translator.py         # NLLB-600M CTranslate2 JA→VI
     ├── pipeline.py           # multi-threaded orchestration
     └── display.py            # terminal subtitle output

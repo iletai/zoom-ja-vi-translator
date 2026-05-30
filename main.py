@@ -43,6 +43,19 @@ def parse_args() -> argparse.Namespace:
         help="use the online streaming recognizer for low-latency live captions "
         "(shows Japanese as it is spoken; slightly lower accuracy than the default)",
     )
+    parser.add_argument(
+        "--cloud",
+        nargs="?",
+        const="azure",
+        default=None,
+        choices=["azure"],
+        metavar="PROVIDER",
+        help="use a cloud speech-translation backend for the lowest latency "
+        "(~0.5-1s). Currently 'azure' (Azure Speech Translation, JA->VI, 5 "
+        "audio hours/month free). Requires AZURE_SPEECH_KEY and "
+        "AZURE_SPEECH_REGION env vars and 'pip install -r requirements-cloud.txt'. "
+        "Audio is sent to the provider; omit --cloud for fully offline local mode.",
+    )
     return parser.parse_args()
 
 
@@ -94,16 +107,32 @@ def main() -> int:
     # Imported lazily so --list-devices works even before models are downloaded.
     from src.pipeline import TranslationPipeline
 
+    backend = args.cloud if args.cloud else "local"
     try:
-        pipeline = TranslationPipeline(device=device, display=display, streaming=args.streaming)
+        pipeline = TranslationPipeline(
+            device=device,
+            display=display,
+            streaming=args.streaming,
+            backend=backend,
+        )
     except FileNotFoundError as exc:
         display.info(str(exc))
         return 1
+    except ValueError as exc:  # e.g. missing cloud credentials
+        display.info(str(exc))
+        return 1
 
-    mode = "streaming" if args.streaming else "offline"
+    if args.cloud:
+        mode = f"cloud:{args.cloud}"
+        langs = f"{config.CLOUD_SOURCE_LANG} -> {config.CLOUD_TARGET_LANG}"
+    elif args.streaming:
+        mode = "streaming"
+        langs = f"{config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}"
+    else:
+        mode = "offline"
+        langs = f"{config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}"
     display.info(
-        f"Listening [{mode}]... ({config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}). "
-        "Press Ctrl+C to stop."
+        f"Listening [{mode}]... ({langs}). Press Ctrl+C to stop."
     )
     pipeline.run_forever()
     display.info("Stopped.")

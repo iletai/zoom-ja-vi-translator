@@ -63,6 +63,18 @@ NLLB_MAX_DECODING_LENGTH = 256
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
 NLLB_CT2_HF_REPO = "entai2965/nllb-200-distilled-600M-ctranslate2"
 
+# ─── Cloud backend (optional, --cloud) ──────────────────────────────────
+# Optional low-latency backend that streams audio to Azure Speech Translation
+# (single JA->VI streaming call, ~0.5-1s latency, 5 audio hours/month free).
+# Requires credentials via environment variables and the cloud extras
+# (pip install -r requirements-cloud.txt). Audio is sent to Microsoft Azure;
+# use the local backend for fully offline operation.
+CLOUD_PROVIDER = os.environ.get("CLOUD_PROVIDER", "azure")
+CLOUD_SOURCE_LANG = os.environ.get("CLOUD_SOURCE_LANG", "ja-JP")   # Azure BCP-47
+CLOUD_TARGET_LANG = os.environ.get("CLOUD_TARGET_LANG", "vi")      # Azure target code
+AZURE_SPEECH_KEY = os.environ.get("AZURE_SPEECH_KEY", "")
+AZURE_SPEECH_REGION = os.environ.get("AZURE_SPEECH_REGION", "")
+
 # ─── Display ─────────────────────────────────────────────────────────────
 USE_COLOR = True
 
