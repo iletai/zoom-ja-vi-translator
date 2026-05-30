@@ -51,6 +51,7 @@ class NllbTranslator:
         if not text:
             return ""
 
+        text = self._apply_glossary(text)
         token_ids = self.tokenizer.encode(text)
         source_tokens = self.tokenizer.convert_ids_to_tokens(token_ids)
         target_prefix = [config.NLLB_TARGET_LANG]
@@ -78,6 +79,18 @@ class NllbTranslator:
     def warmup(self) -> None:
         """Run one tiny translation to avoid first-call lag."""
         self.translate("テスト")
+
+    @staticmethod
+    def _apply_glossary(text: str) -> str:
+        """Substitute domain terms NLLB mistranslates with Latin renderings.
+
+        The replacement happens on the Japanese source; NLLB copies the Latin
+        text through to the Vietnamese output reliably.
+        """
+        for term, replacement in config.NLLB_GLOSSARY.items():
+            if term in text:
+                text = text.replace(term, replacement)
+        return text
 
 
 if __name__ == "__main__":

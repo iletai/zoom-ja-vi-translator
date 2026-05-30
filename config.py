@@ -106,6 +106,17 @@ NLLB_NO_REPEAT_NGRAM_SIZE = 2
 NLLB_REPETITION_PENALTY = 1.1
 NLLB_MIN_DECODING_LENGTH = 2
 
+# Domain glossary: NLLB-600M renders some proper nouns / loanwords badly
+# (新幹線 -> "đường cao tốc", 箱根 -> "đáy hộp", 北海道 -> "Bắc Hải"). We replace
+# the Japanese term in the SOURCE text with a Latin rendering, which NLLB copies
+# through reliably. Verified per-entry against the real model; only add an entry
+# after confirming it improves output (see test_audio/evidence/).
+NLLB_GLOSSARY = {
+    "新幹線": "tàu Shinkansen",
+    "北海道": "tỉnh Hokkaido",
+    "箱根": "Hakone",
+}
+
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
 NLLB_CT2_HF_REPO = "entai2965/nllb-200-distilled-600M-ctranslate2"
 
