@@ -7,16 +7,50 @@
 # the one-time Audio MIDI Setup steps.
 set -euo pipefail
 
+DRIVER="/Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver"
+
+find_blackhole_pkg() {
+  # Prefer the Caskroom copy, fall back to Homebrew's download cache.
+  local pkg
+  pkg=$(find /usr/local/Caskroom/blackhole-2ch /opt/homebrew/Caskroom/blackhole-2ch \
+        -name "*.pkg" 2>/dev/null | head -1)
+  if [[ -z "$pkg" ]]; then
+    pkg=$(find "$HOME/Library/Caches/Homebrew/downloads" -iname "*BlackHole2ch*.pkg" 2>/dev/null | head -1)
+  fi
+  printf '%s' "$pkg"
+}
+
 echo "==> Installing BlackHole 2ch (virtual audio cable)…"
-if [[ -d "/Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver" ]]; then
-  echo "    BlackHole already installed. Skipping."
+if [[ -d "$DRIVER" ]]; then
+  echo "    BlackHole driver already present at $DRIVER. Skipping."
 else
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "ERROR: Homebrew not found. Install it from https://brew.sh first." >&2
+  # Make sure the .pkg is downloaded (brew may already record it as installed
+  # even when the driver was never actually placed — so we don't rely on that).
+  if command -v brew >/dev/null 2>&1; then
+    brew install blackhole-2ch >/dev/null 2>&1 || true
+  fi
+
+  PKG="$(find_blackhole_pkg)"
+  if [[ -z "$PKG" || ! -f "$PKG" ]]; then
+    echo "ERROR: Could not find the BlackHole .pkg installer." >&2
+    echo "       Try: brew reinstall --cask blackhole-2ch" >&2
     exit 1
   fi
-  # Reuses the cached .pkg if already downloaded. Prompts for your sudo password.
-  brew install blackhole-2ch
+
+  echo "    Running the system installer (you will be asked for your admin password)…"
+  echo "    pkg: $PKG"
+  sudo installer -pkg "$PKG" -target /
+
+  # Reload Core Audio so the new device shows up without a reboot.
+  echo "    Restarting Core Audio…"
+  sudo pkill -9 coreaudiod 2>/dev/null || true
+  sleep 2
+
+  if [[ -d "$DRIVER" ]]; then
+    echo "    ✅ BlackHole installed successfully."
+  else
+    echo "    ⚠️  Driver still not detected. A logout/login or reboot may be needed." >&2
+  fi
 fi
 
 cat <<'STEPS'
