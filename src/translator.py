@@ -23,9 +23,15 @@ class NllbTranslator:
                 "Run scripts/download_models.py to download or convert the model."
             )
 
+        # Load the tokenizer from the local HF cache. Hitting the Hub on every
+        # launch costs ~80s of unauthenticated, rate-limited network round-trips
+        # (the "sending unauthenticated requests to the HF Hub" stall). config.py
+        # enables HF offline mode once models are present, so this resolves to the
+        # on-disk cache (<1s). The local_files_only flag is a belt-and-braces guard.
         self.tokenizer = AutoTokenizer.from_pretrained(
             config.NLLB_HF_MODEL,
             src_lang=config.NLLB_SOURCE_LANG,
+            local_files_only=config.HF_OFFLINE,
         )
         self.translator = ctranslate2.Translator(
             str(ct2_model_dir),

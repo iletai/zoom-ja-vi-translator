@@ -11,6 +11,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# This script downloads models from the HF Hub, so it must always run online —
+# even when models already exist (e.g. a --force re-download). Opt out of the
+# offline mode config enables for the runtime app before importing config.
+os.environ["ZT_HF_ONLINE"] = "1"
+
 import config  # noqa: E402
 
 try:

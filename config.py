@@ -14,6 +14,23 @@ MODELS_DIR = PROJECT_ROOT / "models"
 ASR_MODEL_DIR = MODELS_DIR / "reazonspeech-k2-v2"
 NLLB_CT2_DIR = MODELS_DIR / "nllb-200-distilled-600M-ct2-int8"
 
+# ─── HuggingFace Hub offline mode ────────────────────────────────────────
+# Loading the NLLB tokenizer via from_pretrained contacts the HF Hub to check
+# for updated files on EVERY launch. Unauthenticated (no HF_TOKEN), those calls
+# are rate-limited and can stall ~80s before falling back to the cache — the
+# single biggest cause of slow startup. Once the models are downloaded we never
+# need the network, so enable HF offline mode (cache loads in <1s). These env
+# vars are read by huggingface_hub at import time, so they MUST be set here in
+# config (imported before transformers) to take effect.
+# Force online with ZT_HF_ONLINE=1 (e.g. the first-time tokenizer download).
+HF_OFFLINE = (
+    not os.environ.get("ZT_HF_ONLINE")
+    and NLLB_CT2_DIR.exists()
+)
+if HF_OFFLINE:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 # ─── Audio ───────────────────────────────────────────────────────────────
 SAMPLE_RATE = 16_000          # Hz — required by both ReazonSpeech and VAD
 CHANNELS = 1                  # mono
