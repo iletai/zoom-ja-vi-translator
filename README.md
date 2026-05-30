@@ -194,6 +194,13 @@ Trade-offs:
 Test with **real Japanese speech**, not a song — singing has no sentence pauses,
 so the endpoint detector never fires and the backlog grows.
 
+Segment length is tuned for accuracy and low lag in `config.py`:
+`STREAMING_RULE2_SILENCE` (finalize after a short pause) and
+`STREAMING_RULE3_UTTERANCE` (hard cap on a run-on segment, so continuous speech
+is never handed to the translator as one giant block — which drops words and
+loses context). Lower them for snappier captions, raise them for longer,
+more coherent segments.
+
 ---
 
 ## Cloud backend — lowest latency (optional)

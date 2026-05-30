@@ -44,10 +44,13 @@ ASR_PROVIDER = "cpu"
 STREAMING_ASR_MODEL_DIR = MODELS_DIR / "streaming-zipformer-multi"
 STREAMING_ASR_NUM_THREADS = int(os.environ.get("STREAMING_ASR_NUM_THREADS", "4"))
 # Endpoint detection (seconds). Lower rule2 = the recognizer finalizes a segment
-# sooner after a brief pause, so translation starts earlier.
+# sooner after a brief pause, so translation starts earlier. rule3 caps a run-on:
+# without natural pauses (fast/continuous speech) it forces a boundary so the
+# translator never receives a giant multi-sentence block (which drops words and
+# loses context). Keep it short enough for accurate, low-lag translation.
 STREAMING_RULE1_SILENCE = 2.4    # finalize after this silence even with no decode
-STREAMING_RULE2_SILENCE = 0.8    # finalize after this silence once words decoded
-STREAMING_RULE3_UTTERANCE = 15.0  # force a segment boundary after this length
+STREAMING_RULE2_SILENCE = 0.7    # finalize after this silence once words decoded
+STREAMING_RULE3_UTTERANCE = 7.0  # force a segment boundary after this length
 
 # ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
