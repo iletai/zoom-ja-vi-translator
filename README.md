@@ -66,6 +66,12 @@ The launcher creates the virtualenv, installs CPU-only dependencies, downloads
 the models on first run (~1 GB, cached afterwards), and starts capturing system
 audio. Subsequent runs start instantly.
 
+> **Apple Silicon (M1/M2/M3):** `run.sh` automatically uses a **native arm64**
+> Python and a separate `.venv-arm64`. Running natively instead of under Rosetta 2
+> makes local translation about **3× faster** (NLLB MT ~1 s vs ~3 s per sentence)
+> at zero cost. If you set things up manually, create the venv with an arm64
+> interpreter (e.g. `/usr/bin/python3`) — see below.
+
 ### Manual setup
 
 ```bash
@@ -80,6 +86,17 @@ pip install -r requirements.txt
 
 # 3. Download the models (~1 GB, one-time)
 python3 scripts/download_models.py
+```
+
+On **Apple Silicon**, build the venv with a native arm64 interpreter instead of
+an Intel/Homebrew one (which would run under Rosetta 2 and be ~3× slower):
+
+```bash
+# /usr/bin/python3 is a universal binary that runs arm64 natively on M-series.
+/usr/bin/python3 -m venv .venv-arm64
+source .venv-arm64/bin/activate
+python3 -c 'import platform; print(platform.machine())'   # must print: arm64
+pip install -r requirements.txt
 ```
 
 ### Platform-specific audio setup
@@ -252,6 +269,7 @@ Edit `config.py`:
 
 | Goal | Change |
 |------|--------|
+| **Apple Silicon: ~3× faster (free)** | Use a native arm64 venv (`run.sh` does this automatically; manual: build the venv with `/usr/bin/python3`) |
 | **Lowest latency (~0.5–1s)** | Run with `--cloud azure` (cloud ASR+MT; see above) |
 | **Near-real-time captions** | Run with `--streaming` (live partial Japanese; see above) |
 | **Lower latency** | Reduce `VAD_SILENCE_MS` (e.g. 400); set `NLLB_BEAM_SIZE = 1` |
