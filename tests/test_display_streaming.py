@@ -92,6 +92,41 @@ def test_non_tty_skips_partials() -> None:
     assert buf.getvalue() == ""
 
 
+def test_show_pair_prints_jp_then_vi_contiguously() -> None:
+    d = _display(isatty=True)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        d.show_pair("がよかったので", "Và điều đó rất tốt")
+    text = buf.getvalue()
+    jp_index = text.index("  JP がよかったので")
+    vi_index = text.index("  VI Và điều đó rất tốt")
+    assert jp_index < vi_index
+    assert "  JP がよかったので\n  VI Và điều đó rất tốt" in text
+
+
+def test_show_pair_clears_pending_partial() -> None:
+    d = _display(isatty=True)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        d.show_source_partial("が")
+        d.show_pair("が", "Nhưng")
+    text = buf.getvalue()
+    jp_index = text.index("JP が")
+    assert CLEAR in text[:jp_index]
+    assert d._partial_active is False
+
+
+def test_show_pair_without_color_has_no_ansi_codes() -> None:
+    d = _display(isatty=True)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        d.show_pair("こんにちは", "Xin chào")
+    text = buf.getvalue()
+    assert "\033[" not in text
+    assert "JP こんにちは" in text
+    assert "VI Xin chào" in text
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

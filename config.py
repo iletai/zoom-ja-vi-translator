@@ -76,6 +76,17 @@ STREAMING_RULE3_UTTERANCE = 7.0  # force a segment boundary after this length
 # hypothesis every chunk. 1 disables it (commit everything immediately).
 STREAMING_LOCAL_AGREEMENT_N = 2
 
+# ─── Sentence aggregation (streaming finals -> well-formed sentences) ─────
+# The online recognizer's endpoints fall on acoustic pauses, not grammatical
+# boundaries: it cuts mid-word (変|更), drops sentence heads, and merges several
+# speaker turns into one run-on. Feeding those fragments straight to NLLB (which
+# is sentence-trained) produces dropped words and mistranslations. A small
+# aggregation layer re-joins consecutive fragments and re-splits them at Japanese
+# sentence-final boundaries so the translator receives whole sentences.
+# Force-flush guards keep latency bounded when no clean boundary ever appears.
+STREAM_SENTENCE_MAX_CHARS = 60       # flush a pending buffer once it grows past this
+STREAM_SENTENCE_MAX_WAIT_SEC = 1.5   # flush a pending buffer after this idle time
+
 # ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
 NLLB_SOURCE_LANG = "jpn_Jpan"   # Japanese (Kanji + Kana)

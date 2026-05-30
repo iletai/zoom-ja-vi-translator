@@ -1,0 +1,81 @@
+"""Script-style tests for streaming Japanese sentence aggregation."""
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.sentence_aggregator import SentenceAggregator  # noqa: E402
+
+
+def test_mid_word_split_healed_by_merge() -> None:
+    agg = SentenceAggregator()
+    assert agg.add("では八時発に変") == []
+    assert agg.pending() == "では八時発に変"
+    assert agg.add("更しておきます") == []
+    assert agg.flush() == ["では八時発に変更しておきます"]
+
+
+def test_run_on_re_split_at_meeting_terminals() -> None:
+    agg = SentenceAggregator()
+    out = agg.add("じゃあ時間を変更しておいてくださいはい分かりましたでは八時発に")
+    assert out == ["じゃあ時間を変更しておいてください", "はい分かりました"]
+    assert agg.add("変更しておきます") == []
+    assert agg.flush() == ["では八時発に変更しておきます"]
+
+
+def test_no_terminal_stays_buffered_until_flush() -> None:
+    agg = SentenceAggregator()
+    assert agg.add("3日の京都出張のスケジュールなんですが") == []
+    assert agg.pending() == "3日の京都出張のスケジュールなんですが"
+    assert agg.flush() == ["3日の京都出張のスケジュールなんですが"]
+    assert agg.pending() == ""
+
+
+def test_pending_reflects_buffer_and_reset_clears_it() -> None:
+    agg = SentenceAggregator()
+    assert agg.add("部長") == []
+    assert agg.pending() == "部長"
+    agg.reset()
+    assert agg.pending() == ""
+    assert agg.flush() == []
+
+
+def test_clean_complete_sentence_passes_through_unchanged() -> None:
+    agg = SentenceAggregator()
+    sentence = "今回こちらの新素材のものはいかがかと思いました。"
+    assert agg.add(sentence) == [sentence]
+    assert agg.pending() == ""
+
+
+def test_multiple_sentences_in_one_add_are_all_returned() -> None:
+    agg = SentenceAggregator()
+    text = "この素材は吸水性に大変優れております。手触りもいいんです。"
+    assert agg.add(text) == ["この素材は吸水性に大変優れております。", "手触りもいいんです。"]
+    assert agg.pending() == ""
+
+
+def test_terminal_followed_by_connective_forms_boundary() -> None:
+    agg = SentenceAggregator()
+    out = agg.add("北海道ですかそれはいいですねでは箱根の温泉に行きましょう")
+    assert out == ["北海道ですか", "それはいいですね"]
+    assert agg.flush() == ["では箱根の温泉に行きましょう"]
+
+
+def main() -> int:
+    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    failed = 0
+    for test in tests:
+        try:
+            test()
+            print(f"PASS {test.__name__}")
+        except AssertionError as exc:
+            failed += 1
+            print(f"FAIL {test.__name__}: {exc}")
+    print(f"\n=== RESULT: {'PASS' if failed == 0 else 'FAIL'} ({len(tests) - failed}/{len(tests)}) ===")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

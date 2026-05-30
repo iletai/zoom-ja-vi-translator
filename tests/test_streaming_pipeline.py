@@ -49,6 +49,7 @@ class RecordingDisplay(SubtitleDisplay):
         self.partials: list[str] = []
         self.finals: list[str] = []
         self.targets: list[str] = []
+        self.pairs: list[tuple[str, str]] = []
 
     def show_source_partial(self, committed: str, tail: str = "") -> None:
         self.partials.append(committed + tail)
@@ -59,9 +60,13 @@ class RecordingDisplay(SubtitleDisplay):
     def show_target(self, vietnamese: str) -> None:
         self.targets.append(vietnamese)
 
+    def show_pair(self, japanese: str, vietnamese: str) -> None:
+        self.pairs.append((japanese, vietnamese))
+
     def show(self, japanese: str, vietnamese: str) -> None:
         self.finals.append(japanese)
         self.targets.append(vietnamese)
+        self.pairs.append((japanese, vietnamese))
 
 
 class FakeCapture(threading.Thread):
@@ -115,24 +120,31 @@ def main() -> int:
 
     deadline = time.time() + 120
     while time.time() < deadline:
-        if len(display.targets) >= 1 and pipe._audio_queue.empty():
+        if len(display.pairs) >= 1 and pipe._audio_queue.empty():
             time.sleep(2.0)
             break
         time.sleep(0.5)
 
     pipe.stop()
 
-    print(f"partials={len(display.partials)} finals={len(display.finals)} targets={len(display.targets)}")
-    if display.finals:
-        print("sample final:", display.finals[0][:40])
-    if display.targets:
-        print("sample target:", display.targets[0][:40])
+    print(
+        f"partials={len(display.partials)} finals={len(display.finals)} "
+        f"targets={len(display.targets)} pairs={len(display.pairs)}"
+    )
+    if display.partials:
+        print("sample partial:", display.partials[0][:40])
+    if display.pairs:
+        print("recognized sentences + pairs:")
+        for jp, vi in display.pairs:
+            print(f"  JP: {jp}")
+            print(f"  VI: {vi}")
 
     ok = (
         len(display.partials) > 0
-        and len(display.finals) >= 1
-        and len(display.targets) >= 1
-        and any(has_japanese(f) for f in display.finals)
+        and len(display.pairs) >= 1
+        and all(jp and vi for jp, vi in display.pairs)
+        and all(vi == f"[vi] {jp[:12]}" for jp, vi in display.pairs)
+        and any(has_japanese(jp) for jp, _ in display.pairs)
     )
     print(f"\n=== RESULT: {'PASS' if ok else 'FAIL'} ===")
     return 0 if ok else 1

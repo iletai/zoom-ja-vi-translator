@@ -54,6 +54,10 @@ class RecordingDisplay(SubtitleDisplay):
         self.pairs.append((japanese, vietnamese))
         super().show(japanese, vietnamese)
 
+    def show_pair(self, japanese: str, vietnamese: str) -> None:
+        self.pairs.append((japanese, vietnamese))
+        super().show_pair(japanese, vietnamese)
+
     def show_source(self, japanese: str) -> None:
         self._pending_ja.append(japanese)
         super().show_source(japanese)

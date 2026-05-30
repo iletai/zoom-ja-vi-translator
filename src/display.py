@@ -94,6 +94,17 @@ class SubtitleDisplay:
         vi_line = "  " + self._wrap(f"VI {vietnamese}", _VI_COLOR)
         with self._lock:
             print(f"{self._clear_partial()}\n{header}\n{jp_line}\n{vi_line}", flush=True)
+
+    def show_pair(self, japanese: str, vietnamese: str) -> None:
+        """Atomically print one committed Japanese -> Vietnamese subtitle pair."""
+        timestamp = time.strftime("%H:%M:%S")
+        header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
+        jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
+        vi_line = "  " + self._wrap(f"VI {vietnamese}", _VI_COLOR)
+        with self._lock:
+            clear = self._clear_partial()
+            print(f"{clear}\n{header}\n{jp_line}\n{vi_line}", flush=True)
+
     def show_source(self, japanese: str) -> None:
         """Print the recognized Japanese immediately, before translation is ready.
 

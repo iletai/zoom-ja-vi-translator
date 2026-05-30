@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import queue
 import threading
+from time import monotonic
 
 import config
 from src.asr import JapaneseASR
 from src.audio_capture import AudioCapture
 from src.display import SubtitleDisplay
 from src.local_agreement import LocalAgreementBuffer
+from src.sentence_aggregator import SentenceAggregator
 from src.translator import NllbTranslator
 from src.vad import VadSegmenter
 
@@ -49,6 +51,8 @@ class TranslationPipeline:
         self.asr = None
         self.segmenter = None
         self.streaming_asr = None
+        self.aggregator = None
+        self._last_stream_text_at = monotonic()
         self.translator = None
         self.cloud_translator = None
 
@@ -68,6 +72,8 @@ class TranslationPipeline:
             from src.streaming_asr import StreamingJapaneseASR
 
             self.streaming_asr = StreamingJapaneseASR()
+            self.aggregator = SentenceAggregator()
+            self._last_stream_text_at = monotonic()
         else:
             self.asr = JapaneseASR()
             self.segmenter = VadSegmenter()
@@ -130,9 +136,9 @@ class TranslationPipeline:
     def _streaming_asr_worker(self) -> None:
         """Stream audio into the online recognizer, showing live partials.
 
-        The recognized Japanese is rewritten in place as it is spoken; when the
-        recognizer detects an endpoint the segment is committed and handed to the
-        translator. This keeps the source text latency at roughly one audio block.
+        Live Japanese partials are rewritten in place as they are spoken. Endpoint
+        text is sentence-aggregated before translation so committed JP/VI pairs are
+        printed atomically and in order.
         """
         agreement = LocalAgreementBuffer(config.STREAMING_LOCAL_AGREEMENT_N)
         last_displayed: tuple[str, str] = ("", "")
@@ -140,24 +146,47 @@ class TranslationPipeline:
             try:
                 block = self._audio_queue.get(timeout=0.2)
             except queue.Empty:
+                try:
+                    self._flush_streaming_aggregator_if_due()
+                except Exception as exc:
+                    self.display.info(f"[ASR error] {exc}")
                 continue
             try:
                 self.streaming_asr.accept(block)
                 partial = self.streaming_asr.partial()
                 if partial:
+                    self._last_stream_text_at = monotonic()
                     committed, tail = agreement.update(partial)
                     if (committed, tail) != last_displayed:
                         self.display.show_source_partial(committed, tail)
                         last_displayed = (committed, tail)
                 if self.streaming_asr.at_endpoint():
                     if partial:
-                        self.display.finalize_source(partial)
-                        self._enqueue_text(partial)
+                        for sentence in self.aggregator.add(partial):
+                            self._last_stream_text_at = monotonic()
+                            self._enqueue_text(sentence, pre_shown=False)
                     self.streaming_asr.reset()
                     agreement.reset()
                     last_displayed = ("", "")
+                self._flush_streaming_aggregator_if_due()
             except Exception as exc:  # keep the pipeline alive on a single bad block
                 self.display.info(f"[ASR error] {exc}")
+
+    def _flush_streaming_aggregator_if_due(self) -> None:
+        if not self.streaming or self.aggregator is None:
+            return
+        pending = self.aggregator.pending().strip()
+        if not pending:
+            return
+        idle_sec = monotonic() - self._last_stream_text_at
+        if (
+            len(pending) <= config.STREAM_SENTENCE_MAX_CHARS
+            and idle_sec <= config.STREAM_SENTENCE_MAX_WAIT_SEC
+        ):
+            return
+        for sentence in self.aggregator.flush():
+            self._last_stream_text_at = monotonic()
+            self._enqueue_text(sentence, pre_shown=False)
 
     def _transcribe_and_enqueue(self, utterance) -> None:
         japanese = self.asr.transcribe(utterance).strip()
@@ -166,14 +195,14 @@ class TranslationPipeline:
         # Show the recognized Japanese immediately so the viewer sees what was
         # said without waiting for the (slower) translation stage to finish.
         self.display.show_source(japanese)
-        self._enqueue_text(japanese)
+        self._enqueue_text(japanese, pre_shown=True)
 
-    def _enqueue_text(self, japanese: str) -> None:
+    def _enqueue_text(self, japanese: str, pre_shown: bool) -> None:
         # Lock makes the drop-oldest get+put atomic against the consumer, so a
         # concurrent take cannot cause us to drop an extra (still-fresh) item.
         with self._text_queue_lock:
             try:
-                self._text_queue.put_nowait(japanese)
+                self._text_queue.put_nowait((japanese, pre_shown))
             except queue.Full:
                 # Drop oldest pending text so the freshest speech wins under load.
                 try:
@@ -181,7 +210,7 @@ class TranslationPipeline:
                 except queue.Empty:
                     pass
                 try:
-                    self._text_queue.put_nowait(japanese)
+                    self._text_queue.put_nowait((japanese, pre_shown))
                 except queue.Full:
                     pass
 
@@ -189,7 +218,7 @@ class TranslationPipeline:
         """Translate queued Japanese text into Vietnamese and display it."""
         while not self.stop_event.is_set():
             try:
-                japanese = self._text_queue.get(timeout=0.2)
+                japanese, pre_shown = self._text_queue.get(timeout=0.2)
             except queue.Empty:
                 continue
             try:
@@ -197,9 +226,10 @@ class TranslationPipeline:
             except Exception as exc:
                 self.display.info(f"[Translate error] {exc}")
                 continue
-            # The Japanese line was already shown by the ASR stage; print only the
-            # Vietnamese line so the pair reads naturally without re-printing JP.
-            self.display.show_target(vietnamese or "(...)")
+            if pre_shown:
+                self.display.show_target(vietnamese or "(...)")
+            else:
+                self.display.show_pair(japanese, vietnamese or "(...)")
 
     # ─── Lifecycle ───────────────────────────────────────────────────────
     def start(self) -> None:
@@ -259,12 +289,19 @@ class TranslationPipeline:
         try:
             if self.streaming:
                 self.streaming_asr.finalize_tail()
-                japanese = self.streaming_asr.partial().strip()
+                tail_text = self.streaming_asr.partial().strip()
+                sentences: list[str] = []
+                if tail_text:
+                    sentences.extend(self.aggregator.add(tail_text))
+                sentences.extend(self.aggregator.flush())
+                for japanese in sentences:
+                    vietnamese = self.translator.translate(japanese).strip()
+                    self.display.show_pair(japanese, vietnamese or "(...)")
             else:
                 tail = self.segmenter.flush()
                 japanese = self.asr.transcribe(tail).strip() if tail is not None else ""
-            if japanese:
-                vietnamese = self.translator.translate(japanese).strip()
-                self.display.show(japanese, vietnamese or "(...)")
+                if japanese:
+                    vietnamese = self.translator.translate(japanese).strip()
+                    self.display.show(japanese, vietnamese or "(...)")
         except Exception:
             pass
