@@ -1,0 +1,58 @@
+"""Central configuration for the Zoom Japanese->Vietnamese translator.
+
+All tunable parameters live here so modules stay decoupled and the pipeline
+can be adjusted without touching implementation code.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+# ─── Paths ───────────────────────────────────────────────────────────────
+PROJECT_ROOT = Path(__file__).resolve().parent
+MODELS_DIR = PROJECT_ROOT / "models"
+ASR_MODEL_DIR = MODELS_DIR / "reazonspeech-k2-v2"
+NLLB_CT2_DIR = MODELS_DIR / "nllb-200-distilled-600M-ct2-int8"
+
+# ─── Audio ───────────────────────────────────────────────────────────────
+SAMPLE_RATE = 16_000          # Hz — required by both ReazonSpeech and VAD
+CHANNELS = 1                  # mono
+CAPTURE_BLOCK_SECONDS = 0.2   # size of each captured block before queueing
+CAPTURE_QUEUE_MAXSIZE = 64    # drop-oldest beyond this to bound latency
+
+# ─── VAD (Voice Activity Detection) ──────────────────────────────────────
+# webrtcvad aggressiveness: 0 (least) .. 3 (most aggressive at filtering non-speech)
+VAD_AGGRESSIVENESS = 2
+VAD_FRAME_MS = 30             # webrtcvad supports 10 / 20 / 30 ms frames
+# End an utterance after this much trailing silence (lower = lower latency).
+VAD_SILENCE_MS = 600
+# Ignore utterances shorter / longer than these bounds.
+VAD_MIN_UTTERANCE_MS = 300
+VAD_MAX_UTTERANCE_MS = 12_000
+
+# ─── ASR (ReazonSpeech k2 via sherpa-onnx) ───────────────────────────────
+ASR_NUM_THREADS = int(os.environ.get("ASR_NUM_THREADS", "4"))
+ASR_PROVIDER = "cpu"
+
+# ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
+NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
+NLLB_SOURCE_LANG = "jpn_Jpan"   # Japanese (Kanji + Kana)
+NLLB_TARGET_LANG = "vie_Latn"   # Vietnamese (Latin script)
+NLLB_BEAM_SIZE = 2              # low beam = lower latency (1-2 recommended for real-time)
+NLLB_INTER_THREADS = 1
+NLLB_INTRA_THREADS = int(os.environ.get("NLLB_INTRA_THREADS", "4"))
+NLLB_COMPUTE_TYPE = "int8"
+NLLB_MAX_INPUT_LENGTH = 512
+NLLB_MAX_DECODING_LENGTH = 256
+
+# Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
+NLLB_CT2_HF_REPO = "entai2965/nllb-200-distilled-600M-ctranslate2"
+
+# ─── Display ─────────────────────────────────────────────────────────────
+USE_COLOR = True
+
+# ─── Shutdown ────────────────────────────────────────────────────────────
+# Generous join timeout so an in-flight native ASR/translation call can finish
+# before the process exits (a native call interrupted by interpreter teardown
+# can segfault). The worker still returns as soon as the current item is done.
+WORKER_SHUTDOWN_TIMEOUT = 30.0

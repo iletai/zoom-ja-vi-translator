@@ -1,0 +1,21 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Downloaded models (fetch with scripts/download_models.py)
+models/
+
+# Test audio (fetch from sherpa-onnx release; see tests/)
+test_audio/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

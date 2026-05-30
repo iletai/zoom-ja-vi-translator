@@ -1,0 +1,24 @@
+# Real-time Japanese -> Vietnamese Zoom translator (CPU-only, no GPU required)
+
+# Core numerics
+numpy>=1.26,<2
+
+# Cross-platform audio loopback capture
+soundcard>=0.4.3
+
+# Japanese ASR: ReazonSpeech k2 via sherpa-onnx
+sherpa-onnx>=1.10.0
+
+# Translation: NLLB-600M via CTranslate2 (4-8x faster than PyTorch on CPU)
+ctranslate2>=4.0.0
+transformers>=4.48.0
+sentencepiece>=0.2.0
+
+# Voice Activity Detection
+webrtcvad>=2.0.10
+
+# Model download / conversion helpers
+huggingface_hub>=0.23.0
+
+# Optional: progress bars for model download
+tqdm>=4.66.0
