@@ -78,7 +78,12 @@ class AudioCapture(threading.Thread):
             source_rate = _native_sample_rate(self.device)
             block_frames = max(1, int(round(source_rate * config.CAPTURE_BLOCK_SECONDS)))
 
-            with self.device.recorder(samplerate=source_rate, blocksize=block_frames) as recorder:
+            # NOTE: do not pass our large read size as ``blocksize``. ``blocksize``
+            # is the hardware buffer period, which CoreAudio caps at 512 frames;
+            # ``record(numframes=...)`` already loops internally to gather the full
+            # block. Letting soundcard pick the device-default period keeps this
+            # working on macOS (BlackHole), Windows (WASAPI) and Linux (PulseAudio).
+            with self.device.recorder(samplerate=source_rate) as recorder:
                 while not self.stop_event.is_set():
                     audio = recorder.record(numframes=block_frames)
                     mono = _to_mono_float32(audio)
