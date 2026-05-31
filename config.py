@@ -108,13 +108,24 @@ VAD_ENERGY_MARGIN_RMS = 120.0
 # own CTranslate2/sherpa-onnx threads and are both active on the hot path; with
 # --streaming a third (online ASR) pool joins them. Hardcoding 4 threads per pool
 # oversubscribes anything smaller than an 8-core machine, and context-switch
-# thrash *raises* tail latency. Derive the per-pool default from the physical
-# core count so the concurrent pools sum to roughly the available cores. Explicit
-# env vars (ASR_NUM_THREADS / NLLB_INTRA_THREADS / STREAMING_ASR_NUM_THREADS)
-# still win for hand-tuning.
-_CPU_CORES = os.cpu_count() or 4
-_ASR_THREADS_DEFAULT = max(2, min(4, _CPU_CORES // 2))
-_NLLB_THREADS_DEFAULT = max(2, min(4, _CPU_CORES // 2))
+# thrash *raises* tail latency.
+#
+# Evidence-based allocation (CTranslate2 perf docs + sherpa-onnx ReazonSpeech
+# example, which uses num_threads=2): the int8 Zipformer encoder is memory-
+# bandwidth bound, so ASR gains plateau past ~2 threads — give ASR 2 and hand the
+# remaining physical cores to NLLB (whose intra_threads maps directly to per-call
+# latency). Keep total threads ≤ physical cores. Apple Silicon has no SMT so
+# os.cpu_count() == physical; on x86 with hyperthreading, physical ≈ count//2.
+# Explicit env vars still win for hand-tuning.
+import platform as _platform
+
+_LOGICAL_CORES = os.cpu_count() or 4
+_IS_X86 = _platform.machine().lower() in ("x86_64", "amd64", "i386", "i686")
+_PHYSICAL_CORES = max(2, _LOGICAL_CORES // 2) if _IS_X86 else _LOGICAL_CORES
+# ASR: 2 is sufficient (diminishing returns past it); cap small machines sanely.
+_ASR_THREADS_DEFAULT = max(2, min(2, _PHYSICAL_CORES // 2))
+# NLLB: whatever is left after the two ASR pools, but at least 2.
+_NLLB_THREADS_DEFAULT = max(2, _PHYSICAL_CORES - 2 * _ASR_THREADS_DEFAULT)
 
 # Opt-in low-latency profile (ZT_FAST=1): trades a sliver of MT quality for speed
 # by using beam_size 2 instead of 4 (~1.6-1.9x faster NLLB decode, negligible

@@ -281,7 +281,7 @@ Edit `config.py`:
 | **Near-real-time captions** | Run with `--streaming` (live partial Japanese; see above) |
 | **Lower latency** | Reduce `VAD_SILENCE_MS` (e.g. 400); set `NLLB_BEAM_SIZE = 1`, or run with `ZT_FAST=1` (beam 2) |
 | **Higher translation quality** | `NLLB_BEAM_SIZE = 4` (slower, the default) |
-| **Less CPU / RAM** | Use fewer threads (`ASR_NUM_THREADS`, `NLLB_INTRA_THREADS`); defaults now auto-scale to `os.cpu_count()` to avoid oversubscription |
+| **Less CPU / RAM** | Use fewer threads (`ASR_NUM_THREADS`, `NLLB_INTRA_THREADS`); defaults now auto-scale to the physical core count (ASR pools get 2 — the sherpa-onnx recommendation — and NLLB takes the rest) to avoid oversubscription |
 | **Faster but lower JA accuracy** | Swap ASR to faster-whisper `base` (alternative backend) |
 | **Commercial license** | Replace NLLB with `Helsinki-NLP/opus-mt-ja-vi` (Apache 2.0, ~75 MB int8). Convert with `ct2-opus-mt-converter` and adjust `translator.py` (opus-mt is bilingual — no language prefix token) |
 
