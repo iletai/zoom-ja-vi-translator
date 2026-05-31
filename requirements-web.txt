@@ -1,0 +1,4 @@
+# Web UI (optional) — live Streamlit dashboard that tails the evidence log.
+# Install with:  pip install -r requirements-web.txt
+# Run with:      streamlit run webui/streamlit_app.py
+streamlit>=1.33

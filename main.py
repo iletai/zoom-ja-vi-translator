@@ -103,8 +103,12 @@ def select_device(args: argparse.Namespace, display: SubtitleDisplay):
     return device
 
 
-def _configure_evidence_log(args: argparse.Namespace, display: SubtitleDisplay) -> None:
-    """Enable JSONL evidence logging from --log / ZT_EVIDENCE_LOG if requested."""
+def _configure_evidence_log(args: argparse.Namespace, display: SubtitleDisplay):
+    """Enable JSONL evidence logging from --log / ZT_EVIDENCE_LOG if requested.
+
+    Returns the resolved log path (or ``None``) so the caller can auto-save a
+    human-readable transcript next to it when the session ends.
+    """
     from src import evidence_log
 
     path = args.log
@@ -119,6 +123,36 @@ def _configure_evidence_log(args: argparse.Namespace, display: SubtitleDisplay) 
     resolved = evidence_log.configure(path)
     if resolved is not None:
         display.info(f"Evidence log: {resolved}")
+    return resolved
+
+
+def _save_transcript(log_path, display: SubtitleDisplay) -> None:
+    """Write a bilingual transcript (.txt + .srt) next to the evidence log.
+
+    Best-effort: a failure to export must never mask the real session result, so
+    every error is swallowed with a diagnostic line.
+    """
+    if not log_path:
+        return
+    try:
+        import pathlib
+
+        from src import transcript_export
+
+        log = pathlib.Path(log_path)
+        if not log.exists():
+            return
+        lines = transcript_export.build_lines(transcript_export.load_events(log))
+        if not lines:
+            return
+        for fmt, ext in (("txt", ".txt"), ("srt", ".srt")):
+            out = log.with_suffix(ext)
+            out.write_text(transcript_export.render(lines, fmt), encoding="utf-8")
+        display.info(
+            f"Saved transcript: {log.with_suffix('.txt')} (+ .srt, {len(lines)} lines)"
+        )
+    except Exception as exc:  # pragma: no cover - best-effort save
+        display.info(f"Transcript save skipped: {exc}")
 
 
 def main() -> int:
@@ -129,7 +163,7 @@ def main() -> int:
         audio_capture.list_devices()
         return 0
 
-    _configure_evidence_log(args, display)
+    _log_path = _configure_evidence_log(args, display)
     from src import evidence_log
 
     try:
@@ -179,8 +213,10 @@ def main() -> int:
     finally:
         # Always flush/close the evidence log and leave the terminal clean, even
         # when an error path (device selection, model load, audio failure) skips
-        # the normal shutdown above.
+        # the normal shutdown above. Closing first guarantees every event is on
+        # disk before we read the log back to save the transcript.
         evidence_log.close()
+        _save_transcript(_log_path, display)
 
 
 if __name__ == "__main__":

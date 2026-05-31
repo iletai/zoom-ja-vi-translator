@@ -279,9 +279,9 @@ Edit `config.py`:
 | **Apple Silicon: ~3× faster (free)** | Use a native arm64 venv (`run.sh` does this automatically; manual: build the venv with `/usr/bin/python3`) |
 | **Lowest latency (~0.5–1s)** | Run with `--cloud azure` (cloud ASR+MT; see above) |
 | **Near-real-time captions** | Run with `--streaming` (live partial Japanese; see above) |
-| **Lower latency** | Reduce `VAD_SILENCE_MS` (e.g. 400); set `NLLB_BEAM_SIZE = 1` |
-| **Higher translation quality** | `NLLB_BEAM_SIZE = 4` (slower) |
-| **Less CPU / RAM** | Use fewer threads (`ASR_NUM_THREADS`, `NLLB_INTRA_THREADS`) |
+| **Lower latency** | Reduce `VAD_SILENCE_MS` (e.g. 400); set `NLLB_BEAM_SIZE = 1`, or run with `ZT_FAST=1` (beam 2) |
+| **Higher translation quality** | `NLLB_BEAM_SIZE = 4` (slower, the default) |
+| **Less CPU / RAM** | Use fewer threads (`ASR_NUM_THREADS`, `NLLB_INTRA_THREADS`); defaults now auto-scale to `os.cpu_count()` to avoid oversubscription |
 | **Faster but lower JA accuracy** | Swap ASR to faster-whisper `base` (alternative backend) |
 | **Commercial license** | Replace NLLB with `Helsinki-NLP/opus-mt-ja-vi` (Apache 2.0, ~75 MB int8). Convert with `ct2-opus-mt-converter` and adjust `translator.py` (opus-mt is bilingual — no language prefix token) |
 
@@ -357,15 +357,52 @@ specific fields (`jp`, `vi`, `latency_ms`, `batch`, `queue_size`). Filtering the
 log by a `seq` shows exactly where — if anywhere — a sentence was lost. Logging
 is opt-in and a no-op when not configured.
 
+### Saving the transcript
+
+When a session that used `--log` ends (Ctrl+C or normal stop), a human-readable
+bilingual transcript is written automatically next to the evidence log:
+`run_<ts>.txt` (timestamped JP/VI pairs) and `run_<ts>.srt` (bilingual subtitles
+with correct timing derived from each utterance's audio window). Generate any
+format from an existing log at any time:
+
+```bash
+python3 -m src.transcript_export run.jsonl -f srt -o run.srt
+python3 -m src.transcript_export run.jsonl -f md   --stats   # table + run summary
+```
+
+Formats: `txt`, `md`, `srt`, `json`.
+
+### Live web dashboard (Streamlit)
+
+For a visual, auto-refreshing view of a running meeting, a Streamlit dashboard
+tails the evidence log and renders the live bilingual feed plus run metrics
+(segment count, max-cut %, median latency, loss events) with one-click transcript
+export. It is fully decoupled — a separate process that only reads the log — so it
+adds no latency to and cannot drop data from the translator.
+
+```bash
+# 1. Install the web extra (one-time)
+pip install -r requirements-web.txt
+
+# 2. Start the translator with logging
+python3 main.py --system-audio --log test_audio/evidence/live.jsonl
+
+# 3. In another terminal, open the dashboard and pick that log in the sidebar
+streamlit run webui/streamlit_app.py
+```
+
 ---
 
 ```
 zoom-translator/
 ├── requirements.txt
 ├── requirements-cloud.txt    # optional Azure cloud backend extras
+├── requirements-web.txt      # optional Streamlit live dashboard extras
 ├── config.py                 # all tunable parameters
 ├── main.py                   # CLI entrypoint
 ├── run.sh / run.ps1          # one-command launchers (macOS·Linux / Windows)
+├── webui/
+│   └── streamlit_app.py      # live web dashboard (tails the evidence log)
 ├── scripts/
 │   ├── download_models.py    # downloads ReazonSpeech + NLLB (CT2)
 │   └── setup_macos_audio.sh  # installs BlackHole + prints routing steps
@@ -382,6 +419,7 @@ zoom-translator/
     ├── translator.py         # NLLB-600M CTranslate2 JA→VI (sentence-aware, batched)
     ├── sentence_aggregator.py # JP sentence segmentation (shared by translator)
     ├── evidence_log.py       # opt-in JSONL per-stage logging (--log)
+    ├── transcript_export.py  # build/save transcript (txt·md·srt·json) from a log
     ├── pipeline.py           # multi-threaded orchestration
     └── display.py            # terminal subtitle output
 ```

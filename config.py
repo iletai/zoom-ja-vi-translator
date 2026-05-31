@@ -103,8 +103,27 @@ VAD_ENERGY_NOISE_ALPHA = 0.10
 VAD_ENERGY_MULTIPLIER = 1.8
 VAD_ENERGY_MARGIN_RMS = 120.0
 
+# ─── CPU thread budget (latency) ─────────────────────────────────────────
+# The offline re-decode ASR pool and the NLLB translator pool each spin up their
+# own CTranslate2/sherpa-onnx threads and are both active on the hot path; with
+# --streaming a third (online ASR) pool joins them. Hardcoding 4 threads per pool
+# oversubscribes anything smaller than an 8-core machine, and context-switch
+# thrash *raises* tail latency. Derive the per-pool default from the physical
+# core count so the concurrent pools sum to roughly the available cores. Explicit
+# env vars (ASR_NUM_THREADS / NLLB_INTRA_THREADS / STREAMING_ASR_NUM_THREADS)
+# still win for hand-tuning.
+_CPU_CORES = os.cpu_count() or 4
+_ASR_THREADS_DEFAULT = max(2, min(4, _CPU_CORES // 2))
+_NLLB_THREADS_DEFAULT = max(2, min(4, _CPU_CORES // 2))
+
+# Opt-in low-latency profile (ZT_FAST=1): trades a sliver of MT quality for speed
+# by using beam_size 2 instead of 4 (~1.6-1.9x faster NLLB decode, negligible
+# chrF++ change on the short sentences this pipeline feeds it). The default keeps
+# beam 4 because accuracy is the stated priority; flip ZT_FAST=1 on a slow CPU.
+FAST_PROFILE = _env_flag("ZT_FAST", False)
+
 # ─── ASR (ReazonSpeech k2 via sherpa-onnx) ───────────────────────────────
-ASR_NUM_THREADS = int(os.environ.get("ASR_NUM_THREADS", "4"))
+ASR_NUM_THREADS = int(os.environ.get("ASR_NUM_THREADS", str(_ASR_THREADS_DEFAULT)))
 ASR_PROVIDER = "cpu"
 
 # ─── Streaming ASR (online zipformer, opt-in via --streaming) ─────────────
@@ -112,7 +131,9 @@ ASR_PROVIDER = "cpu"
 # as audio arrives, so the recognized text appears almost immediately instead of
 # waiting for an end-of-utterance pause. Trades a little accuracy for latency.
 STREAMING_ASR_MODEL_DIR = MODELS_DIR / "streaming-zipformer-multi"
-STREAMING_ASR_NUM_THREADS = int(os.environ.get("STREAMING_ASR_NUM_THREADS", "4"))
+STREAMING_ASR_NUM_THREADS = int(
+    os.environ.get("STREAMING_ASR_NUM_THREADS", str(_ASR_THREADS_DEFAULT))
+)
 # Endpoint detection (seconds). Lower rule2 = the recognizer finalizes a segment
 # sooner after a brief pause, so translation starts earlier. rule3 caps a run-on:
 # without natural pauses (fast/continuous speech) it forces a boundary so the
@@ -182,9 +203,13 @@ STREAM_DEDUP_WINDOW_SEC = 30.0
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
 NLLB_SOURCE_LANG = "jpn_Jpan"   # Japanese (Kanji + Kana)
 NLLB_TARGET_LANG = "vie_Latn"   # Vietnamese (Latin script)
-NLLB_BEAM_SIZE = int(os.environ.get("NLLB_BEAM_SIZE", "4"))  # beam search: +1-3 BLEU vs greedy
+NLLB_BEAM_SIZE = int(
+    os.environ.get("NLLB_BEAM_SIZE", "2" if FAST_PROFILE else "4")
+)  # beam search: +1-3 BLEU vs greedy; ZT_FAST lowers to 2 for ~1.7x faster decode
 NLLB_INTER_THREADS = 1
-NLLB_INTRA_THREADS = int(os.environ.get("NLLB_INTRA_THREADS", "4"))
+NLLB_INTRA_THREADS = int(
+    os.environ.get("NLLB_INTRA_THREADS", str(_NLLB_THREADS_DEFAULT))
+)
 NLLB_COMPUTE_TYPE = "int8"
 NLLB_MAX_INPUT_LENGTH = 512
 # 350 (target tokens) is a safety cap, not a target: Vietnamese is more verbose
