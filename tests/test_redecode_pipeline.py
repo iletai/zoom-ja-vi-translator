@@ -13,6 +13,7 @@ Runs the REAL online + offline ASR models; only the NLLB translator is stubbed
 """
 from __future__ import annotations
 
+import re
 import sys
 import threading
 import time
@@ -27,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 import config  # noqa: E402
 import src.pipeline as pipeline_mod  # noqa: E402
 from src.display import SubtitleDisplay  # noqa: E402
+from src.sentence_aggregator import SentenceAggregator  # noqa: E402
 
 WAV_DIR = ROOT / "test_audio" / "sherpa-onnx-zipformer-ja-reazonspeech-2024-08-01" / "test_wavs"
 BLOCK_SECONDS = config.CAPTURE_BLOCK_SECONDS
@@ -113,6 +115,19 @@ def build_stream() -> tuple[np.ndarray, int]:
     return np.concatenate(parts), len(wavs)
 
 
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def replay_aggregator(raw_fragments: list[str]) -> list[str]:
+    agg = SentenceAggregator()
+    emitted: list[str] = []
+    for fragment in raw_fragments:
+        emitted.extend(agg.add(fragment))
+    emitted.extend(agg.flush())
+    return emitted
+
+
 def main() -> int:
     config.STREAMING_REDECODE_OFFLINE = True  # force the hybrid path under test
     pipeline_mod.NllbTranslator = StubTranslator
@@ -125,6 +140,17 @@ def main() -> int:
     if not getattr(pipe, "_redecode", False):
         print("FAIL: pipeline did not enter re-decode mode")
         return 1
+
+    raw_asr_fragments: list[str] = []
+    original_transcribe = pipe.asr.transcribe
+
+    def recording_transcribe(utterance) -> str:
+        text = original_transcribe(utterance).strip()
+        if text:
+            raw_asr_fragments.append(text)
+        return text
+
+    pipe.asr.transcribe = recording_transcribe
     pipe._capture = FakeCapture(stream, pipe._audio_queue, pipe.stop_event)
 
     pipe.start()
@@ -141,7 +167,14 @@ def main() -> int:
     pipe.stop()
 
     recognized_jp = " ".join(jp for _, jp in display.sources)
-    print(f"sources={len(display.sources)} targets={len(display.targets)}")
+    emitted_sources = [jp for _, jp in display.sources]
+    expected_sources = replay_aggregator(raw_asr_fragments)
+    raw_concat = normalize_text("".join(raw_asr_fragments))
+    emitted_concat = normalize_text("".join(emitted_sources))
+    replay_concat = normalize_text("".join(expected_sources))
+    print(f"raw_asr_fragments={len(raw_asr_fragments)} sources={len(display.sources)} targets={len(display.targets)}")
+    for i, raw in enumerate(raw_asr_fragments, 1):
+        print(f"  [raw={i}] ASR: {raw}")
     for seq, jp in display.sources:
         print(f"  [seq={seq}] JP: {jp}")
 
@@ -157,6 +190,20 @@ def main() -> int:
 
     # 3. Got an utterance for (nearly) every wav — nothing wholesale dropped.
     checks.append((f"recognized >= {n_wavs - 1} utterances", len(display.sources) >= n_wavs - 1))
+
+    # 3b. Hard offline aggregation contract: emitted source sentences must be a
+    # lossless re-segmentation of the raw ASR fragments (no dropped or duplicated
+    # characters, ignoring display whitespace only).
+    checks.append(("raw ASR fragments were observed", len(raw_asr_fragments) >= n_wavs - 1))
+    checks.append(("aggregated source concat == raw ASR concat", emitted_concat == raw_concat))
+    checks.append(("SentenceAggregator replay itself is lossless", replay_concat == raw_concat))
+    checks.append(("sensible aggregated sentence count",
+                   2 <= len(emitted_sources) <= max(n_wavs * 2, len(raw_asr_fragments) + 2)))
+    checks.append(("aggregation merged raw fragments", len(emitted_sources) < len(raw_asr_fragments)))
+    checks.append(("known 気象庁 fragments merged",
+                   any("気象庁は" in s and "雪や路面" in s for s in emitted_sources)))
+    checks.append(("known H2A fragments merged",
+                   any("打ち上げの成功率" in s and "一回の打ち上げ費用" in s for s in emitted_sources)))
 
     # 4. Every committed source is non-empty Japanese.
     def has_japanese(t: str) -> bool:

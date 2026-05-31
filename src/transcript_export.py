@@ -5,11 +5,13 @@ event per pipeline stage. This module reconstructs the final, ordered list of
 translated subtitle lines from that log and renders it as plain text, Markdown,
 SRT subtitles, or JSON — so a finished meeting can be saved and re-read.
 
-Timing: in the hybrid pipeline ``segment_finalized``, ``translate`` and
-``display`` events are emitted 1:1 in sequence order. ``segment_finalized``
-carries ``duration_s`` and a monotonic ``t_ms`` marking the *end* of the spoken
-utterance, so each subtitle's audio window is ``[t_ms - duration_s*1000, t_ms]``.
-That yields correct SRT timestamps relative to session start.
+Timing: subtitle windows are derived from the ``display`` events' wall-clock
+``t_ms`` — each line spans from its own display time to the next line's display
+time (clamped to a readable range). Sentence aggregation breaks the 1:1
+segment↔display relationship, so timing is taken from the display timeline
+rather than joined to ``segment_finalized`` events. This is robust for both
+legacy logs (no per-segment seq) and aggregated runs, and never shifts when a
+finalized segment produces no display.
 
 Usage:
     python -m src.transcript_export run.jsonl --format srt -o run.srt
@@ -25,6 +27,8 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 _LOSS_EVENTS = {
+    "audio_block_dropped",
+    "audio_capture_error",
     "segment_abandoned",
     "empty_translation",
     "segment_queue_backpressure",
@@ -63,29 +67,66 @@ def load_events(path: str | Path) -> list[dict[str, Any]]:
     return events
 
 
+# Bounds for a derived subtitle line duration (ms). A line spans from its own
+# display time to the next line's display time, clamped into this range so a
+# long pause before the next utterance doesn't leave one subtitle on screen
+# forever and a rapid-fire pair still shows for a readable minimum.
+_MIN_LINE_MS = 800.0
+_MAX_LINE_MS = 8000.0
+_LAST_LINE_MS = 3000.0
+
+
 def build_lines(events: Iterable[dict[str, Any]]) -> list[TranscriptLine]:
     """Reconstruct the ordered bilingual transcript from evidence events.
 
-    ``display`` events are canonical for text (they carry the final jp+vi+seq).
-    ``segment_finalized`` events (same order, 1:1) provide the audio timing. When
-    counts differ — e.g. a log captured mid-run — the two streams are zipped to
-    the shorter length so a partial transcript still renders cleanly.
+    ``display`` events are canonical: each carries the final jp+vi+seq and the
+    wall-clock ``t_ms`` at which the line was shown. Timing is derived purely
+    from these display timestamps — each line spans from its own ``t_ms`` to the
+    next line's ``t_ms`` (clamped) — rather than by joining to ``segment_finalized``
+    events. Sentence aggregation deliberately breaks the 1:1 segment↔display
+    relationship (one merged sentence can come from several VAD segments, and one
+    run-on segment can yield several displays), so neither positional nor
+    seq-based pairing with segments is well-defined; using the display timeline
+    is robust for old and new logs alike and never shifts on a skipped display.
+
+    Duplicate displays for the same ``seq`` (a pre-shown line later superseded by
+    its final text) collapse to the last occurrence so the final wording wins.
     """
-    displays = [e for e in events if e.get("event") == "display"]
-    segments = [e for e in events if e.get("event") == "segment_finalized"]
+    latest_by_seq: dict[int, dict[str, Any]] = {}
+    order: list[int] = []
+    fallback_seq = 0
+    for e in events:
+        if e.get("event") != "display":
+            continue
+        raw_seq = e.get("seq")
+        if raw_seq is None:
+            fallback_seq -= 1  # keep order, never collide with real (positive) seqs
+            seq = fallback_seq
+        else:
+            seq = int(raw_seq)
+        if seq not in latest_by_seq:
+            order.append(seq)
+        latest_by_seq[seq] = e
+
+    # Order lines by display time (t_ms), falling back to seq for stability.
+    ordered = sorted(order, key=lambda s: (float(latest_by_seq[s].get("t_ms", 0.0)), s))
+    starts = [float(latest_by_seq[s].get("t_ms", 0.0)) for s in ordered]
 
     lines: list[TranscriptLine] = []
-    for idx, disp in enumerate(displays):
-        seg = segments[idx] if idx < len(segments) else None
-        if seg is not None:
-            end_ms = float(seg.get("t_ms", 0.0))
-            start_ms = max(0.0, end_ms - float(seg.get("duration_s", 0.0)) * 1000.0)
+    prev_end = 0.0
+    for i, seq in enumerate(ordered):
+        disp = latest_by_seq[seq]
+        start_ms = max(starts[i], prev_end)
+        if i + 1 < len(ordered):
+            gap = starts[i + 1] - starts[i]
+            span = min(_MAX_LINE_MS, max(_MIN_LINE_MS, gap))
         else:
-            end_ms = float(disp.get("t_ms", 0.0))
-            start_ms = end_ms
+            span = _LAST_LINE_MS
+        end_ms = start_ms + span
+        prev_end = end_ms
         lines.append(
             TranscriptLine(
-                seq=int(disp.get("seq", idx + 1)),
+                seq=seq,
                 jp=(disp.get("jp") or "").strip(),
                 vi=(disp.get("vi") or "").strip(),
                 start_ms=start_ms,
@@ -152,12 +193,13 @@ def _fmt_srt_ts(ms: float) -> str:
 def to_srt(lines: list[TranscriptLine], bilingual: bool = True) -> str:
     """Render lines as an SRT subtitle file (VI on top, JP below when bilingual)."""
     blocks: list[str] = []
+    previous_end = 0.0
     for i, ln in enumerate(lines, start=1):
-        end = ln.end_ms if ln.end_ms > ln.start_ms else ln.start_ms + 1500.0
+        start = max(previous_end, ln.start_ms)
+        end = ln.end_ms if ln.end_ms > start else start + 1500.0
         text = ln.vi if not bilingual else f"{ln.vi}\n{ln.jp}".strip()
-        blocks.append(
-            f"{i}\n{_fmt_srt_ts(ln.start_ms)} --> {_fmt_srt_ts(end)}\n{text}\n"
-        )
+        blocks.append(f"{i}\n{_fmt_srt_ts(start)} --> {_fmt_srt_ts(end)}\n{text}\n")
+        previous_end = end
     return "\n".join(blocks)
 
 

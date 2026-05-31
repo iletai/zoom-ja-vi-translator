@@ -7,6 +7,7 @@ import numpy as np
 import soundcard as sc
 
 import config
+from src import evidence_log as ev
 
 
 _LOOPBACK_NAME_HINTS = (
@@ -72,6 +73,7 @@ class AudioCapture(threading.Thread):
         self.output_queue = output_queue
         self.stop_event = stop_event
         self.error: Exception | None = None
+        self.dropped_blocks = 0
 
     def run(self) -> None:
         try:
@@ -90,6 +92,7 @@ class AudioCapture(threading.Thread):
                     resampled = _resample_linear(mono, source_rate, int(config.SAMPLE_RATE))
                     self._put_drop_oldest(resampled)
         except Exception as exc:
+            ev.log("audio_capture_error", error=str(exc))
             self.error = exc
             self.stop_event.set()
 
@@ -112,6 +115,12 @@ class AudioCapture(threading.Thread):
     def _drop_oldest(self) -> bool:
         try:
             self.output_queue.get_nowait()
+            self.dropped_blocks += 1
+            ev.log(
+                "audio_block_dropped",
+                dropped_blocks=self.dropped_blocks,
+                queue_size=self.output_queue.qsize(),
+            )
             return True
         except queue.Empty:
             return False

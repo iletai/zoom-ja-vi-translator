@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -31,6 +32,7 @@ _lock = threading.Lock()
 _fh = None  # type: ignore[assignment]
 _path: Optional[Path] = None
 _start_mono = time.monotonic()
+_dropped_event_count = 0
 
 
 def configure(path: Optional[str]) -> Optional[Path]:
@@ -53,8 +55,8 @@ def configure(path: Optional[str]) -> Optional[Path]:
             return None
         target = Path(resolved).expanduser()
         target.parent.mkdir(parents=True, exist_ok=True)
-        # Line-buffered append so each event hits disk immediately; a crash mid-
-        # meeting still leaves a complete trail up to the last event.
+        # Line-buffered append keeps events visible promptly; close() performs a
+        # best-effort flush/fsync for a stronger shutdown guarantee.
         _fh = open(target, "a", encoding="utf-8", buffering=1)
         _path = target
     log("session_start", pid=os.getpid())
@@ -63,6 +65,29 @@ def configure(path: Optional[str]) -> Optional[Path]:
 
 def is_enabled() -> bool:
     return _fh is not None
+
+
+def get_dropped_event_count() -> int:
+    """Return the number of evidence events lost to logger failures."""
+    return _dropped_event_count
+
+
+def summarize() -> dict[str, Any]:
+    """Return logger health details for auditability."""
+    return {
+        "enabled": is_enabled(),
+        "path": str(_path) if _path is not None else None,
+        "dropped_events": get_dropped_event_count(),
+    }
+
+
+def _record_dropped_event(event: str, error: BaseException) -> None:
+    global _dropped_event_count
+    _dropped_event_count += 1
+    print(
+        f"[evidence_log] dropped audit event {event!r}: {error}",
+        file=sys.stderr,
+    )
 
 
 def log(event: str, **fields: Any) -> None:
@@ -80,21 +105,28 @@ def log(event: str, **fields: Any) -> None:
     }
     record.update(fields)
     try:
-        line = json.dumps(record, ensure_ascii=False)
+        line = json.dumps(record, ensure_ascii=False, default=str)
         with _lock:
             if _fh is not None:
                 _fh.write(line + "\n")
-    except Exception:  # pragma: no cover - logging must never break the pipeline
-        pass
+    except Exception as exc:  # pragma: no cover - logging must never break the pipeline
+        _record_dropped_event(event, exc)
 
 
 def close() -> None:
-    """Flush and close the log file (best effort)."""
+    """Flush, fsync, and close the log file (best effort)."""
     global _fh, _path
     with _lock:
         if _fh is not None:
+            handle = _fh
             try:
-                _fh.close()
+                try:
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                except Exception as exc:  # pragma: no cover - best-effort close
+                    _record_dropped_event("close", exc)
+                finally:
+                    handle.close()
             finally:
                 _fh = None
                 _path = None

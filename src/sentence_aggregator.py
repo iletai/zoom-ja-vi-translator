@@ -45,7 +45,7 @@ def split_japanese_sentences(text: str) -> list[str]:
 class SentenceAggregator:
     """Join ASR fragments and emit whole, translatable Japanese sentences."""
 
-    _HARD_FINALS = frozenset("。！？!?.")
+    _HARD_FINALS = frozenset("。！？!?")
 
     # Polite terminal forms, matched longest-first so e.g. ませんでした wins
     # over ません and ですか over です.
@@ -54,6 +54,7 @@ class SentenceAggregator:
         "ましょう",
         "でしょう",
         "ください",
+        "下さい",
         "でした",
         "ません",
         "ました",
@@ -149,7 +150,12 @@ class SentenceAggregator:
         remainder = self._buffer.strip()
         self._buffer = ""
         if remainder:
-            sentences.append(remainder)
+            if self.is_dangling(remainder) and sentences:
+                # At shutdown do not send a low-content tail to NLLB by itself;
+                # attach it to the sentence it was trailing so no text is lost.
+                sentences[-1] += remainder
+            else:
+                sentences.append(remainder)
         return sentences
 
     def pending(self) -> str:
@@ -211,6 +217,12 @@ class SentenceAggregator:
                     # after a greeting (こんにちはでは始めます → must split).
                     if rest and rest[0] in "とのにへを":
                         break
+                    continuation_rest = rest[1:] if rest.startswith("、") else rest
+                    if any(
+                        continuation_rest.startswith(cont)
+                        for cont in self._CONTINUATIONS
+                    ):
+                        break
                     if end < n:
                         return end
                     if flush:
@@ -229,7 +241,7 @@ class SentenceAggregator:
     def _boundary_after_base(self, text: str, end: int, base: str) -> int | None:
         """Return the split index after a base terminal, or None if mid-sentence."""
         rest = text[end:]
-        if base == "ください" and any(
+        if base in ("ください", "下さい") and any(
             rest.startswith(suffix) for suffix in self._KUDASAI_SUFFIXES
         ):
             return None
@@ -254,10 +266,23 @@ class SentenceAggregator:
             # turn-starter; otherwise it begins the next word, so stop and split
             # BEFORE it (at the base boundary) instead of mid-word.
             # EXCEPTION: ね immediately after a polite base (ですね / ますね) is
-            # unambiguously the confirmation particle — no content word attaches
-            # straight onto です/ます — so consume it even when content follows,
-            # avoiding the「ですね|とても…」→「です」+「ねとても…」orphan.
+            # almost always a true sentence-final particle even when the next
+            # clause follows directly (ですねとても…), so consume it greedily to
+            # avoid orphaning ね onto the next sentence.
             if text[j] == "ね" and j == end:
+                j += 1
+                continue
+            # よ is far more ambiguous: it is also the first kana of よろしく,
+            # which is extremely common right after a polite base (ますよろしく).
+            # So consume a base-adjacent よ only when what follows is itself a
+            # final particle (ですよね → よ then ね); a trailing/terminal よ
+            # (ですよ。 / end of buffer) is handled by the generic ``after``
+            # check below, and ますよろしく correctly splits BEFORE よ.
+            if (
+                text[j] == "よ"
+                and j == end
+                and text[j + 1 : j + 2] in self._FINAL_PARTICLES
+            ):
                 j += 1
                 continue
             after = text[j + 1 :]

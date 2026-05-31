@@ -1,0 +1,6 @@
+{"ts": "23:30:02", "t_ms": 1594.4, "thread": "MainThread", "event": "session_start", "pid": 15206}
+{"ts": "23:30:02", "t_ms": 1594.6, "thread": "MainThread", "event": "empty_translation", "seq": 1, "sentence_index": 1, "jp": "二つ目です。"}
+{"ts": "23:30:02", "t_ms": 1594.7, "thread": "MainThread", "event": "translate", "seq": 1, "jp": "一つ目です。二つ目です。", "vi": "VI(一つ目です。) (...)", "latency_ms": 0.1, "batch": 2}
+{"ts": "23:30:02", "t_ms": 1594.7, "thread": "MainThread", "event": "display", "seq": 1, "pre_shown": true, "jp": "一つ目です。二つ目です。", "vi": "VI(一つ目です。) (...)"}
+{"ts": "23:30:02", "t_ms": 1594.7, "thread": "MainThread", "event": "translate", "seq": 2, "jp": "三つ目です。", "vi": "VI(三つ目です。)", "latency_ms": 0.1, "batch": 2}
+{"ts": "23:30:02", "t_ms": 1594.7, "thread": "MainThread", "event": "display", "seq": 2, "pre_shown": true, "jp": "三つ目です。", "vi": "VI(三つ目です。)"}

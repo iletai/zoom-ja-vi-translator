@@ -112,19 +112,22 @@ VAD_ENERGY_MARGIN_RMS = 120.0
 #
 # Evidence-based allocation (CTranslate2 perf docs + sherpa-onnx ReazonSpeech
 # example, which uses num_threads=2): the int8 Zipformer encoder is memory-
-# bandwidth bound, so ASR gains plateau past ~2 threads — give ASR 2 and hand the
-# remaining physical cores to NLLB (whose intra_threads maps directly to per-call
-# latency). Keep total threads ≤ physical cores. Apple Silicon has no SMT so
-# os.cpu_count() == physical; on x86 with hyperthreading, physical ≈ count//2.
-# Explicit env vars still win for hand-tuning.
+# bandwidth bound, so ASR gains plateau past ~2 threads. Start ASR at 2 threads,
+# then scale modestly on larger CPUs as physical_cores//4, capped at 4. NLLB gets
+# the remaining budget after reserving for offline re-decode ASR plus streaming
+# ASR (when --streaming is active); in non-streaming mode this is conservative but
+# avoids oversubscribing the three-pool streaming hot path. The NLLB floor remains
+# 2, so very small CPUs may still exceed the budget slightly. Apple Silicon has no
+# SMT so os.cpu_count() == physical; on x86 with hyperthreading, physical ≈
+# count//2. Explicit env vars still win for hand-tuning.
 import platform as _platform
 
 _LOGICAL_CORES = os.cpu_count() or 4
 _IS_X86 = _platform.machine().lower() in ("x86_64", "amd64", "i386", "i686")
 _PHYSICAL_CORES = max(2, _LOGICAL_CORES // 2) if _IS_X86 else _LOGICAL_CORES
-# ASR: 2 is sufficient (diminishing returns past it); cap small machines sanely.
-_ASR_THREADS_DEFAULT = max(2, min(2, _PHYSICAL_CORES // 2))
-# NLLB: whatever is left after the two ASR pools, but at least 2.
+# ASR: 2 on typical 8-core machines; scales to 3-4 only on bigger CPUs.
+_ASR_THREADS_DEFAULT = max(2, min(4, _PHYSICAL_CORES // 4))
+# NLLB: remaining physical cores after offline + streaming ASR reservations.
 _NLLB_THREADS_DEFAULT = max(2, _PHYSICAL_CORES - 2 * _ASR_THREADS_DEFAULT)
 
 # Opt-in low-latency profile (ZT_FAST=1): trades a sliver of MT quality for speed
@@ -207,11 +210,44 @@ STREAM_SENTENCE_MAX_WAIT_SEC = 1.5   # flush a pending buffer after this idle ti
 # displaying a sentence that is identical to the immediately-previous one when it
 # is at least this many characters long and arrives within this time window. Short
 # back-channel words (はい/ええ) are exempt so legitimate repeats still show.
+STREAM_DEDUP_ENABLED = not _env_flag("ZT_NO_STREAM_DEDUP")
 STREAM_DEDUP_MIN_CHARS = 6
 STREAM_DEDUP_WINDOW_SEC = 30.0
 
+# ─── Offline ASR sentence aggregation (re-decode + non-streaming paths) ───
+# The offline VAD endpoints fall on acoustic pauses, not grammatical sentence
+# boundaries (evidence run_20260531_215444: 141/143 segments cut on silence,
+# median 7 chars, 26% <=3 chars). Feeding those sub-sentence fragments straight to
+# NLLB — which is sentence-trained — produces hallucinated/wrong Vietnamese (主に
+# "mainly" -> "Thậm chí"; one spoken sentence split across 3 VAD segments and
+# translated as 3 disconnected fragments). The SAME SentenceAggregator the
+# streaming path uses is therefore applied to the offline ASR output too:
+# consecutive fragments are re-joined and re-split at Japanese sentence-final
+# boundaries so the translator receives whole sentences with context. Set
+# ZT_NO_OFFLINE_AGGREGATE=1 to fall back to per-segment translation for
+# debugging/benchmarking.
+OFFLINE_AGGREGATE_SENTENCES = not _env_flag("ZT_NO_OFFLINE_AGGREGATE")
+# Idle time after the last recognized fragment before a still-incomplete buffer is
+# force-flushed, so a sentence that never reaches a clean terminal (or a final
+# back-channel) is still translated. This is deliberately generous: evidence
+# run_20260531_215444 shows consecutive fragments of ONE spoken sentence arrive
+# ~2s apart (median inter-fragment gap 2.57s) because each fragment takes that long
+# to speak — a short window would flush every fragment on its own and defeat the
+# aggregation. Completed sentences are emitted immediately on their grammatical
+# terminal (です/ます/。), so this idle cap only adds latency to a genuinely
+# trailing/incomplete tail. Lower it for fast single-speaker back-and-forth where
+# turn-merging is a concern.
+OFFLINE_SENTENCE_MAX_WAIT_SEC = float(
+    os.environ.get("ZT_OFFLINE_SENTENCE_MAX_WAIT_SEC", "2.5")
+)
+
 # ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
+# Hugging Face Hub revision used when fetching the tokenizer / model. Pinning a
+# revision makes downloads reproducible and avoids silently picking up upstream
+# changes. "main" tracks the latest commit; pin a full commit SHA for a fully
+# reproducible, tamper-evident download.
+NLLB_HF_REVISION = os.environ.get("NLLB_HF_REVISION", "main")
 NLLB_SOURCE_LANG = "jpn_Jpan"   # Japanese (Kanji + Kana)
 NLLB_TARGET_LANG = "vie_Latn"   # Vietnamese (Latin script)
 NLLB_BEAM_SIZE = int(
@@ -227,11 +263,12 @@ NLLB_MAX_INPUT_LENGTH = 512
 # than Japanese, so long compound sentences could clip at the old 256.
 NLLB_MAX_DECODING_LENGTH = 350
 # Anti-repetition / quality knobs applied to CTranslate2 decoding. These fix the
-# observed "Tôi xin xin" 2-gram loops, dropped trailing words, and empty outputs:
-#   - no_repeat_ngram_size: forbid repeating any n-gram of this size (kills loops)
+# observed "Tôi xin xin" short loops, dropped trailing words, and empty outputs:
+#   - no_repeat_ngram_size: forbid repeating any n-gram of this size without
+#     blocking legitimate repeated bigrams such as Vietnamese reduplication
 #   - repetition_penalty: >1.0 discourages re-emitting recent tokens
 #   - min_decoding_length: force at least this many target tokens (avoids "")
-NLLB_NO_REPEAT_NGRAM_SIZE = 2
+NLLB_NO_REPEAT_NGRAM_SIZE = 3
 NLLB_REPETITION_PENALTY = 1.1
 # 1: with accurate offline ASR, short back-channels (はい→"Vâng") no longer need
 # padding to a 2-token minimum (which previously forced filler like "Vâng vâng").
@@ -263,6 +300,7 @@ NLLB_GLOSSARY = {
 
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
 NLLB_CT2_HF_REPO = "entai2965/nllb-200-distilled-600M-ctranslate2"
+NLLB_CT2_HF_REVISION = os.environ.get("NLLB_CT2_HF_REVISION", "main")
 
 # ─── Cloud backend (optional, --cloud) ──────────────────────────────────
 # Optional low-latency backend that streams audio to Azure Speech Translation

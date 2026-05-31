@@ -55,6 +55,7 @@ class NllbTranslator:
         self.tokenizer = AutoTokenizer.from_pretrained(
             config.NLLB_HF_MODEL,
             src_lang=config.NLLB_SOURCE_LANG,
+            revision=config.NLLB_HF_REVISION,
             local_files_only=config.HF_OFFLINE,
         )
         self.translator = ctranslate2.Translator(

@@ -8,6 +8,9 @@ import numpy as np
 
 import config
 
+# Minimum silence run used as a safe min-cut boundary at max utterance length.
+VAD_MINCUT_SILENCE_MS = 90
+
 try:
     import webrtcvad
 except ImportError:  # pragma: no cover - allows syntax checks without optional wheel.
@@ -30,7 +33,7 @@ class VadSegmenter:
         self.min_utterance_ms = int(config.VAD_MIN_UTTERANCE_MS)
         self.max_utterance_ms = int(config.VAD_MAX_UTTERANCE_MS)
         self.frame_samples = self.sample_rate * self.frame_ms // 1000
-        self._min_silence_at_max_frames = max(1, 98 // self.frame_ms)
+        self._min_silence_at_max_frames = max(1, VAD_MINCUT_SILENCE_MS // self.frame_ms)
         self._energy_gate = bool(getattr(config, "VAD_ENERGY_GATE", False))
         self._noise_floor: Optional[float] = None
         self._energy_margin = float(getattr(config, "VAD_ENERGY_MARGIN_RMS", 120.0)) / 32768.0
@@ -203,7 +206,7 @@ class VadSegmenter:
             rms_tail = self._utterance_rms[half:]
             min_offset = int(np.argmin(rms_tail)) if rms_tail else 0
             cut_idx = max(1, half + min_offset)
-            carry_start = cut_idx + 1
+            carry_start = cut_idx
 
         emitted_frames = self._utterance_frames[:cut_idx]
         carry_frames = self._utterance_frames[carry_start:]

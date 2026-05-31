@@ -64,6 +64,13 @@ class TranslationPipeline:
         self._last_stream_text_at = monotonic()
         self._last_enqueued_text = ""
         self._last_enqueued_at = 0.0
+        # Re-join offline ASR fragments into whole sentences before translation so
+        # NLLB receives context (see config.OFFLINE_AGGREGATE_SENTENCES). Touched by
+        # exactly one worker (non-streaming _asr_worker XOR streaming _redecode_worker)
+        # and, at shutdown, only by the main thread after that worker is joined — so
+        # no locking is needed.
+        self._offline_aggregator = None
+        self._last_offline_text_at = monotonic()
         self.translator = None
         # Hybrid streaming: True = online model drives live partials only, while
         # a VAD-segmented offline re-decode produces the translated text.
@@ -104,6 +111,8 @@ class TranslationPipeline:
         else:
             self.asr = JapaneseASR()
             self.segmenter = VadSegmenter()
+        if self.asr is not None and config.OFFLINE_AGGREGATE_SENTENCES:
+            self._offline_aggregator = SentenceAggregator()
         self.display.info("Models ready.")
 
         self._capture = AudioCapture(self.device, self._audio_queue, self.stop_event)
@@ -155,10 +164,15 @@ class TranslationPipeline:
             try:
                 block = self._audio_queue.get(timeout=0.2)
             except queue.Empty:
+                # No audio arriving: flush a buffered sentence that has gone idle.
+                self._flush_offline_aggregator_if_due()
                 continue
             try:
                 for utterance in self.segmenter.push(block):
                     self._transcribe_and_enqueue(utterance)
+                # Non-speech blocks keep this loop busy without ever hitting the
+                # Empty branch, so also check the idle flush after each block.
+                self._flush_offline_aggregator_if_due()
             except Exception as exc:  # keep the pipeline alive on a single bad block
                 self.display.info(f"[ASR error] {exc}")
 
@@ -276,8 +290,16 @@ class TranslationPipeline:
         consumer). Runs until the end-of-stream sentinel, draining every queued
         utterance even after stop_event is set (shutdown drain)."""
         while True:
-            item = self._segment_queue.get()
+            try:
+                item = self._segment_queue.get(timeout=0.3)
+            except queue.Empty:
+                # No new utterance: flush a buffered sentence that has gone idle.
+                self._flush_offline_aggregator_if_due()
+                continue
             if item is _SEGMENT_SENTINEL:
+                # End of stream: emit any buffered partial sentence (force, so a
+                # dangling tail is never silently dropped) before exiting.
+                self._flush_offline_aggregator_if_due(force=True)
                 return
             try:
                 self._transcribe_and_enqueue(item)
@@ -311,14 +333,81 @@ class TranslationPipeline:
         if not japanese:
             return
         ev.log("asr_final", text=japanese, n_chars=len(japanese))
-        # Show the recognized Japanese immediately so the viewer sees what was
-        # said without waiting for the (slower) translation stage to finish. The
-        # seq ties this source line to its later target line so the display can
-        # keep the JP/VI pair together even when batching shows several sources
-        # before the first translation is ready.
+        if self._offline_aggregator is None:
+            # Legacy: translate each VAD segment independently. Show the recognized
+            # Japanese immediately so the viewer sees what was said without waiting
+            # for the (slower) translation stage; the seq ties this source line to
+            # its later target line so batching keeps the JP/VI pair together.
+            seq = self._next_seq()
+            self.display.show_source(japanese, seq=seq)
+            self._enqueue_text(japanese, pre_shown=True, seq=seq)
+            return
+        # VAD cuts on acoustic pauses, not sentence boundaries, so a single spoken
+        # sentence arrives as several fragments. Re-join them into whole sentences
+        # before translating: NLLB is sentence-trained and hallucinates on sub-
+        # sentence fragments. The incomplete tail stays buffered until a terminal
+        # arrives or the idle/shutdown flush emits it (never dropped).
+        self._last_offline_text_at = monotonic()
+        for sentence in self._offline_aggregator.add(japanese):
+            ev.log("aggregator_emit", text=sentence, reason="boundary")
+            self._emit_offline_sentence(sentence)
+
+    def _emit_offline_sentence(self, japanese: str) -> None:
+        """Display + enqueue one aggregated Japanese sentence (offline path).
+
+        The seq pairs this committed source line with its later translation so the
+        JP/VI pair stays together through batching.
+        """
         seq = self._next_seq()
         self.display.show_source(japanese, seq=seq)
         self._enqueue_text(japanese, pre_shown=True, seq=seq)
+
+    def _flush_offline_aggregator_if_due(self, force: bool = False) -> None:
+        """Emit the buffered offline sentence when idle, oversized, or at shutdown.
+
+        ``force`` (end-of-stream / shutdown) emits everything, including a low-
+        content dangling tail — losing recognized text would violate the never-
+        drop-data guarantee. The non-forced idle path keeps a dangling fragment
+        (が/から/…) buffered so it merges with the next utterance instead of
+        translating to garbage on its own.
+        """
+        if self._offline_aggregator is None:
+            return
+        pending = self._offline_aggregator.pending().strip()
+        if not pending:
+            return
+        if not force:
+            idle_sec = monotonic() - self._last_offline_text_at
+            if (
+                len(pending) <= config.STREAM_SENTENCE_MAX_CHARS
+                and idle_sec <= config.OFFLINE_SENTENCE_MAX_WAIT_SEC
+            ):
+                return
+            if self._offline_aggregator.is_dangling(pending):
+                return
+        for sentence in self._offline_aggregator.flush():
+            self._last_offline_text_at = monotonic()
+            ev.log("aggregator_emit", text=sentence,
+                   reason="shutdown" if force else "flush")
+            self._emit_offline_sentence(sentence)
+
+    def _log_offline_aggregator_abandoned(self, reason: str) -> None:
+        """Record buffered offline text that a non-flushing shutdown abandons.
+
+        Aggregated text can sit only in the aggregator's buffer (not in any queue),
+        so the queue-size accounting would otherwise miss it. Logging keeps the
+        never-silently-lost-data audit trail complete even when we deliberately
+        skip the trailing flush (e.g. Ctrl+C, or a worker stuck mid-inference)."""
+        if self._offline_aggregator is None:
+            return
+        pending = self._offline_aggregator.pending().strip()
+        if pending:
+            ev.log("offline_aggregator_abandoned", text=pending,
+                   n_chars=len(pending), reason=reason)
+
+    def _segment_queue_pending_count(self) -> int:
+        with self._segment_queue.mutex:
+            return sum(1 for item in self._segment_queue.queue if item is not _SEGMENT_SENTINEL)
 
     def _next_seq(self) -> int:
         with self._seq_lock:
@@ -326,7 +415,7 @@ class TranslationPipeline:
             return self._seq
 
     def _enqueue_text(self, japanese: str, pre_shown: bool, seq: int | None = None) -> None:
-        if not pre_shown:
+        if not pre_shown and config.STREAM_DEDUP_ENABLED:
             stripped = japanese.strip()
             now = monotonic()
             if (
@@ -469,7 +558,45 @@ class TranslationPipeline:
             cursor += count
         return out
 
-    def _drain_text_queue(self) -> None:
+    def _translate_and_display_shutdown_sentence(self, japanese: str, pre_shown: bool) -> None:
+        seq = self._next_seq()
+        if pre_shown:
+            try:
+                self.display.show_source(japanese, seq=seq)
+            except Exception as exc:
+                ev.log("display_error", seq=seq, jp=japanese, vi="", error=str(exc))
+        ev.log(
+            "enqueue",
+            seq=seq,
+            text=japanese,
+            pre_shown=pre_shown,
+            queue_size=self._text_queue.qsize(),
+        )
+        started = monotonic()
+        try:
+            vietnamese = self.translator.translate(japanese).strip()
+        except Exception as exc:
+            ev.log("translate_error", seq=seq, text=japanese, error=str(exc))
+            vietnamese = ""
+        latency_ms = round((monotonic() - started) * 1000.0, 1)
+        ev.log(
+            "translate",
+            seq=seq,
+            jp=japanese,
+            vi=vietnamese,
+            latency_ms=latency_ms,
+            batch=1,
+        )
+        try:
+            if pre_shown:
+                self.display.show_target(vietnamese or "(...)", japanese=japanese, seq=seq)
+            else:
+                self.display.show_pair(japanese, vietnamese or "(...)")
+            ev.log("display", seq=seq, pre_shown=pre_shown, jp=japanese, vi=vietnamese)
+        except Exception as exc:
+            ev.log("display_error", seq=seq, jp=japanese, vi=vietnamese, error=str(exc))
+
+    def _drain_text_queue(self, deadline: float | None = None) -> None:
         """Translate and display any items left in the text queue at shutdown.
 
         Called from the main thread in stop() AFTER the workers are joined, so the
@@ -478,6 +605,8 @@ class TranslationPipeline:
         memory and native call size.
         """
         while True:
+            if deadline is not None and monotonic() >= deadline:
+                return
             batch: list[tuple[int, str, bool]] = []
             while len(batch) < config.TRANSLATE_MAX_BATCH:
                 try:
@@ -555,6 +684,25 @@ class TranslationPipeline:
         self._translate_thread.join(timeout=config.WORKER_SHUTDOWN_TIMEOUT)
 
         if not flush_tail:
+            # Ctrl+C best-effort: keep shutdown bounded, but audit and drain any
+            # already-recognized text that is safe to process on this thread.
+            text_pending = self._text_queue.qsize()
+            segment_pending = self._segment_queue_pending_count()
+            if text_pending or segment_pending:
+                ev.log(
+                    "shutdown_unflushed",
+                    text_queue=text_pending,
+                    segment_queue=segment_pending,
+                    reason="ctrl_c",
+                )
+            if not self._translate_thread.is_alive():
+                try:
+                    self._drain_text_queue(deadline=monotonic() + 0.5)
+                except Exception as exc:
+                    ev.log("shutdown_drain_error", error=str(exc), reason="ctrl_c")
+            else:
+                ev.log("shutdown_drain_skipped", reason="ctrl_c", translate_thread_alive=True)
+            self._log_offline_aggregator_abandoned("ctrl_c")
             return
         # If a worker is still running (join timed out mid-inference), skip the
         # trailing flush rather than race on the non-thread-safe models — but
@@ -562,12 +710,20 @@ class TranslationPipeline:
         # silent loss.
         redecode_busy = self._redecode_thread is not None and self._redecode_thread.is_alive()
         if self._asr_thread.is_alive() or self._translate_thread.is_alive() or redecode_busy:
-            pending = self._text_queue.qsize() + self._segment_queue.qsize()
-            if pending:
-                ev.log("shutdown_unflushed", queue_size=pending)
+            pending = self._text_queue.qsize() + self._segment_queue_pending_count()
+            agg_pending = (
+                self._offline_aggregator.pending().strip()
+                if self._offline_aggregator is not None
+                else ""
+            )
+            if pending or agg_pending:
+                ev.log("shutdown_unflushed", queue_size=pending,
+                       aggregator_pending=agg_pending)
+                detail = f"{pending} recognized item(s)"
+                if agg_pending:
+                    detail += f" + {len(agg_pending)} buffered char(s)"
                 self.display.info(
-                    f"[Shutdown] {pending} recognized item(s) not translated "
-                    "(worker still busy)."
+                    f"[Shutdown] {detail} not translated (worker still busy)."
                 )
             return
 
@@ -583,6 +739,8 @@ class TranslationPipeline:
             ev.log("shutdown_drain_error", error=str(exc))
 
         # Flush any trailing in-progress utterance so the last words aren't lost.
+        sentences: list[str] = []
+        pending_before_flush = ""
         try:
             if self._redecode:
                 # The VAD tail was already finalized into the segment queue and
@@ -592,18 +750,33 @@ class TranslationPipeline:
             elif self.streaming:
                 self.streaming_asr.finalize_tail()
                 tail_text = self.streaming_asr.partial().strip()
-                sentences: list[str] = []
                 if tail_text:
                     sentences.extend(self.aggregator.add(tail_text))
+                pending_before_flush = self.aggregator.pending().strip()
                 sentences.extend(self.aggregator.flush())
                 for japanese in sentences:
-                    vietnamese = self.translator.translate(japanese).strip()
-                    self.display.show_pair(japanese, vietnamese or "(...)")
+                    self._translate_and_display_shutdown_sentence(japanese, pre_shown=False)
             else:
                 tail = self.segmenter.flush()
-                japanese = self.asr.transcribe(tail).strip() if tail is not None else ""
-                if japanese:
-                    vietnamese = self.translator.translate(japanese).strip()
-                    self.display.show(japanese, vietnamese or "(...)")
-        except Exception:
-            pass
+                tail_text = self.asr.transcribe(tail).strip() if tail is not None else ""
+                # Drain the offline sentence aggregator too: a buffered fragment
+                # lives only in the aggregator (not the text queue), so a normal
+                # stop must flush it or the last words are lost.
+                if self._offline_aggregator is not None:
+                    if tail_text:
+                        sentences.extend(self._offline_aggregator.add(tail_text))
+                    pending_before_flush = self._offline_aggregator.pending().strip()
+                    sentences.extend(self._offline_aggregator.flush())
+                elif tail_text:
+                    sentences = [tail_text]
+                    pending_before_flush = tail_text
+                for japanese in sentences:
+                    self._translate_and_display_shutdown_sentence(japanese, pre_shown=True)
+        except Exception as exc:
+            ev.log(
+                "shutdown_tail_abandoned",
+                reason="normal_stop",
+                error=str(exc),
+                aggregator_pending=pending_before_flush,
+                sentences=sentences,
+            )

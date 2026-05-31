@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.sentence_aggregator import SentenceAggregator  # noqa: E402
+from src.sentence_aggregator import SentenceAggregator, split_japanese_sentences  # noqa: E402
 
 
 def test_mid_word_split_healed_by_merge() -> None:
@@ -101,8 +101,6 @@ def test_dangling_fragment_detection() -> None:
 def test_polite_ne_not_orphaned_in_unpunctuated_runon() -> None:
     # ですね/ますね followed straight by the next clause must keep ね with its own
     # sentence, never orphan it onto the next ("です"+"ねとても…" was the bug).
-    from src.sentence_aggregator import split_japanese_sentences
-
     assert split_japanese_sentences("すぐに答える練習ですねとてもいいテーマです") == [
         "すぐに答える練習ですね",
         "とてもいいテーマです",
@@ -113,16 +111,52 @@ def test_polite_ne_not_orphaned_in_unpunctuated_runon() -> None:
 
 
 def test_sentence_final_yo_does_not_corrupt_following_word() -> None:
-    # よ after a polite base must NOT be consumed when it actually begins よろしく
-    # (the asymmetry that makes the ね exception safe but not a よ exception).
-    from src.sentence_aggregator import split_japanese_sentences
-
+    # よろしく after a greeting must stay intact when the greeting branch splits.
     assert split_japanese_sentences("おはようございますよろしくお願いします") == [
         "おはようございます",
         "よろしくお願いします",
     ]
     # A genuine sentence-final よ at end of buffer stays attached.
     assert split_japanese_sentences("いいですよ") == ["いいですよ"]
+
+
+def test_polite_yo_ne_sequences_stay_whole() -> None:
+    for text in (
+        "今日はいい天気ですよね。",
+        "そうですよね。",
+        "明日行きますよね。",
+    ):
+        out = split_japanese_sentences(text)
+        assert out == [text], out
+        assert "".join(out) == text
+
+
+def test_ascii_period_does_not_split_decimals_or_abbreviations() -> None:
+    for text in (
+        "価格は3.5ドルです",
+        "U.S.A.について話します",
+    ):
+        out = split_japanese_sentences(text)
+        assert out == [text], out
+        assert "".join(out) == text
+
+
+def test_greeting_followed_by_ga_continuation_stays_joined() -> None:
+    text = "ありがとうございますが、始めます。"
+    out = split_japanese_sentences(text)
+    assert out == [text], out
+    assert "".join(out) == text
+
+
+def test_flush_merges_dangling_tail_with_previous_sentence() -> None:
+    agg = SentenceAggregator()
+    src = "今日は晴れです。が"
+    agg._buffer = src
+    out = agg.flush()
+    assert out == [src], out
+    assert "が" not in out
+    assert "".join(out) == src
+    assert agg.pending() == ""
 
 
 def main() -> int:

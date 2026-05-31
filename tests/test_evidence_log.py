@@ -49,6 +49,30 @@ class EvidenceLogTest(unittest.TestCase):
             for key in ("ts", "t_ms", "thread", "event"):
                 self.assertIn(key, translate)
 
+    def test_unexpected_types_are_serialized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "evidence.jsonl"
+            evidence_log.configure(str(path))
+            evidence_log.log("path_event", payload=Path("meeting.log"))
+            evidence_log.close()
+
+            events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            event = next(e for e in events if e["event"] == "path_event")
+            self.assertEqual(event["payload"], "meeting.log")
+
+    def test_dropped_event_counter_surfaces_logger_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "evidence.jsonl"
+            evidence_log.configure(str(path))
+            before = evidence_log.get_dropped_event_count()
+            circular: list[object] = []
+            circular.append(circular)
+
+            evidence_log.log("bad_event", payload=circular)
+
+            self.assertEqual(evidence_log.get_dropped_event_count(), before + 1)
+            self.assertEqual(evidence_log.summarize()["dropped_events"], before + 1)
+
     def test_configure_none_disables(self) -> None:
         self.assertIsNone(evidence_log.configure(None))
         self.assertFalse(evidence_log.is_enabled())
