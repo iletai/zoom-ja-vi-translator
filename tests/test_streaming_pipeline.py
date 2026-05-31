@@ -39,6 +39,11 @@ class StubTranslator:
     def translate(self, text: str) -> str:
         return f"[vi] {text[:12]}"
 
+    def translate_many(self, texts: list[str]) -> list[str]:
+        # Must mirror translate() one-to-one: the batched/flattened pipeline path
+        # relies on len(out) == len(texts) for correct per-item attribution.
+        return [self.translate(t) for t in texts]
+
     def warmup(self) -> None:
         pass
 
@@ -50,6 +55,10 @@ class RecordingDisplay(SubtitleDisplay):
         self.finals: list[str] = []
         self.targets: list[str] = []
         self.pairs: list[tuple[str, str]] = []
+        self.infos: list[str] = []
+
+    def info(self, message: str) -> None:
+        self.infos.append(message)
 
     def show_source_partial(self, committed: str, tail: str = "") -> None:
         self.partials.append(committed + tail)
@@ -57,7 +66,7 @@ class RecordingDisplay(SubtitleDisplay):
     def finalize_source(self, japanese: str) -> None:
         self.finals.append(japanese)
 
-    def show_target(self, vietnamese: str) -> None:
+    def show_target(self, vietnamese: str, japanese=None, seq=None) -> None:
         self.targets.append(vietnamese)
 
     def show_pair(self, japanese: str, vietnamese: str) -> None:
@@ -106,6 +115,10 @@ def has_japanese(text: str) -> bool:
 
 
 def main() -> int:
+    # This suite validates the legacy online-only streaming mechanics (endpoint
+    # -> show_pair). The accurate offline re-decode path is covered separately in
+    # test_redecode_pipeline.py.
+    config.STREAMING_REDECODE_OFFLINE = False
     pipeline_mod.NllbTranslator = StubTranslator  # avoid loading the heavy MT model
 
     stream = build_stream()
@@ -145,7 +158,11 @@ def main() -> int:
         and all(jp and vi for jp, vi in display.pairs)
         and all(vi == f"[vi] {jp[:12]}" for jp, vi in display.pairs)
         and any(has_japanese(jp) for jp, _ in display.pairs)
+        and not any("[Translate error]" in m for m in display.infos)
     )
+    if any("[Translate error]" in m for m in display.infos):
+        print("UNEXPECTED translate errors:",
+              [m for m in display.infos if "[Translate error]" in m])
     print(f"\n=== RESULT: {'PASS' if ok else 'FAIL'} ===")
     return 0 if ok else 1
 

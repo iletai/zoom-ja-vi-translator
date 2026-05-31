@@ -85,6 +85,10 @@ class AzureSpeechTranslator:
         # Guards display state and stream access against the Azure SDK callback
         # threads (recognizing/recognized/canceled) and the capture worker.
         self._lock = threading.Lock()
+        # Separate lock dedicated to push-stream write/close coordination so a
+        # blocking native stream.write() never holds the same lock the SDK
+        # callbacks contend on (deadlock risk).
+        self._stream_lock = threading.Lock()
         self._stopping = False
 
         if not self.key or not self.region:
@@ -185,19 +189,23 @@ class AzureSpeechTranslator:
 
     def push(self, samples: np.ndarray) -> None:
         """Feed one captured mono float32 block to the recognizer."""
-        with self._lock:
+        pcm = float32_to_pcm16(samples)
+        if not pcm:
+            return
+        # Hold _stream_lock across the write so stop() cannot close the stream
+        # mid-write (write-after-close crashes the capture thread). pcm is built
+        # outside the lock; the lock only spans the native write.
+        with self._stream_lock:
             if self._stopping or self._push_stream is None:
                 return
-            stream = self._push_stream
-        pcm = float32_to_pcm16(samples)
-        if pcm:
-            stream.write(pcm)
+            self._push_stream.write(pcm)
 
     def stop(self) -> None:
         with self._lock:
             if self._stopping:
                 return
             self._stopping = True
+        with self._stream_lock:
             stream = self._push_stream
             self._push_stream = None
         try:

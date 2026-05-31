@@ -8,6 +8,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    """True when env var ``name`` is set to an affirmative value.
+
+    Using ``not os.environ.get(name)`` is wrong: it treats "0"/"false" as set
+    (non-empty string is truthy), so ``ZT_NO_SENTENCE_SPLIT=0`` would disable
+    splitting and ``ZT_HF_ONLINE=0`` would force online mode — the opposite of
+    the user's intent. Accept only the usual affirmative spellings.
+    """
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
 # ─── Paths ───────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -35,7 +49,7 @@ NLLB_CT2_DIR = Path(
 # config (imported before transformers) to take effect.
 # Force online with ZT_HF_ONLINE=1 (e.g. the first-time tokenizer download).
 HF_OFFLINE = (
-    not os.environ.get("ZT_HF_ONLINE")
+    not _env_flag("ZT_HF_ONLINE")
     and NLLB_CT2_DIR.exists()
 )
 if HF_OFFLINE:
@@ -47,19 +61,47 @@ SAMPLE_RATE = 16_000          # Hz — required by both ReazonSpeech and VAD
 CHANNELS = 1                  # mono
 CAPTURE_BLOCK_SECONDS = 0.2   # size of each captured block before queueing
 CAPTURE_QUEUE_MAXSIZE = 64    # drop-oldest beyond this to bound latency
+# Recognized-text queue between ASR and translation. Unlike raw audio (which
+# cannot block capture indefinitely), text here is already-recognized speech —
+# dropping it permanently loses meeting content, the user's exact complaint. So
+# it is generously sized and the producer applies backpressure instead of
+# dropping (see pipeline). Kept large so backpressure is a rare last resort.
+TEXT_QUEUE_MAXSIZE = int(os.environ.get("ZT_TEXT_QUEUE_MAXSIZE", "256"))
 
 # ─── VAD (Voice Activity Detection) ──────────────────────────────────────
-# webrtcvad aggressiveness: 0 (least) .. 3 (most aggressive at filtering non-speech)
-VAD_AGGRESSIVENESS = 2
+# webrtcvad aggressiveness: 0 (least) .. 3 (most aggressive at filtering non-speech).
+# Default 3 so the silence endpoint fires on live system/mic capture of continuous
+# podcasts/meetings — at 2 a constant background keeps every frame "voiced" and each
+# utterance is force-cut at the 7s max (evidence run_20260531_144156: 19/23 segments
+# = 7.02s), cramming several turns into one chunk that the offline ASR then partially
+# drops. The leading-mora clipping that 3 alone caused (気象庁 -> 町長) is repaired by
+# the pre-roll collar below. The segment_finalized evidence event logs reason=
+# "max_utterance" vs "silence" so the segmentation regime is visible per run.
+VAD_AGGRESSIVENESS = int(os.environ.get("ZT_VAD_AGGRESSIVENESS", "3"))
+# Pre-onset collar: prepend this much audio before each detected speech onset so
+# aggressiveness=3 (which fires natural boundaries in continuous/background audio)
+# does not clip the quiet leading mora of the first word (気象庁 -> 町長 without it).
+VAD_PREROLL_MS = int(os.environ.get("ZT_VAD_PREROLL_MS", "240"))
 VAD_FRAME_MS = 30             # webrtcvad supports 10 / 20 / 30 ms frames
 # End an utterance after this much trailing silence (lower = lower latency).
-VAD_SILENCE_MS = 450
+# 300ms separates fast back-and-forth dialog turns so two speakers are not merged
+# into one segment (which the offline model would then transcribe as run-on
+# speech); env-tunable for quieter single-speaker setups.
+VAD_SILENCE_MS = int(os.environ.get("ZT_VAD_SILENCE_MS", "300"))
 # Ignore utterances shorter / longer than these bounds. The upper bound also
 # force-flushes long continuous speech so it is transcribed and translated in
 # bounded chunks instead of waiting for a pause — this keeps latency predictable
 # (translation cost grows with input length) during a fast-talking meeting.
-VAD_MIN_UTTERANCE_MS = 300
-VAD_MAX_UTTERANCE_MS = 7_000
+# 120ms lower bound keeps short Japanese back-channels (はい / うん / ああ) instead
+# of dropping them before they reach the offline model.
+VAD_MIN_UTTERANCE_MS = int(os.environ.get("ZT_VAD_MIN_MS", "120"))
+VAD_MAX_UTTERANCE_MS = int(os.environ.get("ZT_VAD_MAX_MS", "7000"))
+# Optional RMS gate: OFF by default. RMS is compared in float32 scale (0..1),
+# so the static PCM-16 margin is converted in VadSegmenter before use.
+VAD_ENERGY_GATE = _env_flag("ZT_VAD_ENERGY_GATE", False)
+VAD_ENERGY_NOISE_ALPHA = 0.10
+VAD_ENERGY_MULTIPLIER = 1.8
+VAD_ENERGY_MARGIN_RMS = 120.0
 
 # ─── ASR (ReazonSpeech k2 via sherpa-onnx) ───────────────────────────────
 ASR_NUM_THREADS = int(os.environ.get("ASR_NUM_THREADS", "4"))
@@ -95,6 +137,27 @@ STREAMING_AUDIO_OVERLAP_SEC = 0.6
 # hypothesis every chunk. 1 disables it (commit everything immediately).
 STREAMING_LOCAL_AGREEMENT_N = 2
 
+# ─── Hybrid streaming: online partials + offline re-decode (accuracy fix) ──
+# The online streaming zipformer is great for low-latency live captions but is
+# acoustically weaker than the offline ReazonSpeech model and loses content at
+# segment boundaries: it drops sentence onsets after an endpoint reset
+# (「気象庁は…」 -> 「Jは…」, 「すぐに」 -> 「ぐに」) and re-decodes its overlap window
+# into duplicates (「皆さん皆さん」, 「ともとともに」). Empirically the offline model
+# transcribes the same audio with zero loss. Best practice for accurate streaming
+# ASR (whisper_streaming / sherpa VAD examples) is therefore: drive the live
+# partial display from the online model, but produce the text that is actually
+# TRANSLATED by re-decoding each completed utterance's raw audio with the strong
+# offline model. The online model never feeds the translator in this mode.
+#   ZT_NO_REDECODE=1 falls back to the old online-only streaming behaviour.
+STREAMING_REDECODE_OFFLINE = not _env_flag("ZT_NO_REDECODE")
+
+# Bound the finalized-utterance hand-off queue (online worker -> offline
+# re-decode worker). Utterances arrive at roughly speech-turn rate (a few per
+# 10 s), so this is generous headroom; if offline decode ever falls behind under
+# CPU overload the online worker blocks here (logged as segment_queue_backpressure)
+# rather than dropping already-captured audio.
+SEGMENT_QUEUE_MAX = 64
+
 # ─── Sentence aggregation (streaming finals -> well-formed sentences) ─────
 # The online recognizer's endpoints fall on acoustic pauses, not grammatical
 # boundaries: it cuts mid-word (変|更), drops sentence heads, and merges several
@@ -124,7 +187,9 @@ NLLB_INTER_THREADS = 1
 NLLB_INTRA_THREADS = int(os.environ.get("NLLB_INTRA_THREADS", "4"))
 NLLB_COMPUTE_TYPE = "int8"
 NLLB_MAX_INPUT_LENGTH = 512
-NLLB_MAX_DECODING_LENGTH = 256
+# 350 (target tokens) is a safety cap, not a target: Vietnamese is more verbose
+# than Japanese, so long compound sentences could clip at the old 256.
+NLLB_MAX_DECODING_LENGTH = 350
 # Anti-repetition / quality knobs applied to CTranslate2 decoding. These fix the
 # observed "Tôi xin xin" 2-gram loops, dropped trailing words, and empty outputs:
 #   - no_repeat_ngram_size: forbid repeating any n-gram of this size (kills loops)
@@ -132,7 +197,19 @@ NLLB_MAX_DECODING_LENGTH = 256
 #   - min_decoding_length: force at least this many target tokens (avoids "")
 NLLB_NO_REPEAT_NGRAM_SIZE = 2
 NLLB_REPETITION_PENALTY = 1.1
-NLLB_MIN_DECODING_LENGTH = 2
+# 1: with accurate offline ASR, short back-channels (はい→"Vâng") no longer need
+# padding to a 2-token minimum (which previously forced filler like "Vâng vâng").
+NLLB_MIN_DECODING_LENGTH = 1
+
+# Segment a multi-sentence Japanese block into single sentences before
+# translating. NLLB silently drops trailing sentences when given more than one
+# at once (verified), so this is on by default; set ZT_NO_SENTENCE_SPLIT=1 to
+# fall back to the legacy single-sequence behaviour for debugging/benchmarking.
+TRANSLATE_SPLIT_SENTENCES = not _env_flag("ZT_NO_SENTENCE_SPLIT")
+# Max recognized items the translate worker drains and translates in one batch.
+# Cross-item batching raises throughput so a fast meeting does not build the
+# backlog that forces the text queue to shed data.
+TRANSLATE_MAX_BATCH = int(os.environ.get("TRANSLATE_MAX_BATCH", "8"))
 
 # Domain glossary: NLLB-600M renders some proper nouns / loanwords badly
 # (新幹線 -> "đường cao tốc", 箱根 -> "đáy hộp", 北海道 -> "Bắc Hải"). We replace
@@ -143,6 +220,9 @@ NLLB_GLOSSARY = {
     "新幹線": "tàu Shinkansen",
     "北海道": "tỉnh Hokkaido",
     "箱根": "Hakone",
+    "ヤンバルクイナ": "chim Yanbaru kuina",
+    "ポッドキャスト": "podcast",
+    "テーマ": "chủ đề",
 }
 
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
@@ -162,6 +242,12 @@ AZURE_SPEECH_REGION = os.environ.get("AZURE_SPEECH_REGION", "")
 
 # ─── Display ─────────────────────────────────────────────────────────────
 USE_COLOR = True
+
+# ─── Evidence logging (opt-in, for debugging dropped data) ───────────────
+# When set (env ZT_EVIDENCE_LOG=<path> or --log <path>), every pipeline stage
+# writes a structured JSONL event so a long meeting can be audited for exactly
+# where a sentence was lost (queue_drop / dedup_skip / translate / display).
+EVIDENCE_LOG_PATH = os.environ.get("ZT_EVIDENCE_LOG", "")
 
 # ─── Shutdown ────────────────────────────────────────────────────────────
 # Generous join timeout so an in-flight native ASR/translation call can finish

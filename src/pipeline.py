@@ -16,13 +16,19 @@ import threading
 from time import monotonic
 
 import config
+from src import evidence_log as ev
 from src.asr import JapaneseASR
 from src.audio_capture import AudioCapture
 from src.display import SubtitleDisplay
 from src.local_agreement import LocalAgreementBuffer
-from src.sentence_aggregator import SentenceAggregator
-from src.translator import NllbTranslator
+from src.sentence_aggregator import SentenceAggregator, split_japanese_sentences
+from src.translator import NllbTranslator, join_translations
 from src.vad import VadSegmenter
+
+
+# Sentinel pushed onto the segment queue to tell the offline re-decode worker the
+# stream has ended and it should drain remaining utterances, then exit.
+_SEGMENT_SENTINEL = object()
 
 
 class TranslationPipeline:
@@ -43,10 +49,13 @@ class TranslationPipeline:
         self.stop_event = threading.Event()
 
         self._audio_queue: queue.Queue = queue.Queue(maxsize=config.CAPTURE_QUEUE_MAXSIZE)
-        # Bounded so a slow translator cannot accumulate unbounded backlog.
-        self._text_queue: queue.Queue = queue.Queue(maxsize=32)
-        # Makes the drop-oldest get+put on the text queue atomic vs. the consumer.
-        self._text_queue_lock = threading.Lock()
+        # Bounded but generously sized: recognized text is preserved via producer
+        # backpressure rather than dropped (dropping = permanent content loss).
+        self._text_queue: queue.Queue = queue.Queue(maxsize=config.TEXT_QUEUE_MAXSIZE)
+        # Monotonic id stamped on every recognized item so logs can trace one
+        # utterance end-to-end and the translator can pair JP/VI by identity.
+        self._seq = 0
+        self._seq_lock = threading.Lock()
 
         self.asr = None
         self.segmenter = None
@@ -56,6 +65,17 @@ class TranslationPipeline:
         self._last_enqueued_text = ""
         self._last_enqueued_at = 0.0
         self.translator = None
+        # Hybrid streaming: True = online model drives live partials only, while
+        # a VAD-segmented offline re-decode produces the translated text.
+        self._redecode = bool(self.streaming and config.STREAMING_REDECODE_OFFLINE)
+        # Finalized raw-audio utterances handed from the online worker to the
+        # offline re-decode worker. _SEGMENT_SENTINEL marks end-of-stream so the
+        # re-decode worker drains everything (incl. the shutdown tail) before exit.
+        self._segment_queue: queue.Queue = queue.Queue(maxsize=config.SEGMENT_QUEUE_MAX)
+        self._redecode_thread = None
+        # Allows _enqueue_text to keep enqueueing during an orderly shutdown drain
+        # even after stop_event is set (so drained segments are never abandoned).
+        self._draining = threading.Event()
         self.cloud_translator = None
 
         if self.cloud:
@@ -76,6 +96,11 @@ class TranslationPipeline:
             self.streaming_asr = StreamingJapaneseASR()
             self.aggregator = SentenceAggregator()
             self._last_stream_text_at = monotonic()
+            if self._redecode:
+                # Hybrid: online model for live partials, offline model + VAD for
+                # the accurate text that gets translated.
+                self.asr = JapaneseASR()
+                self.segmenter = VadSegmenter()
         else:
             self.asr = JapaneseASR()
             self.segmenter = VadSegmenter()
@@ -85,6 +110,8 @@ class TranslationPipeline:
         asr_target = self._streaming_asr_worker if self.streaming else self._asr_worker
         self._asr_thread = threading.Thread(target=asr_target, daemon=True)
         self._translate_thread = threading.Thread(target=self._translate_worker, daemon=True)
+        if self._redecode:
+            self._redecode_thread = threading.Thread(target=self._redecode_worker, daemon=True)
 
     @staticmethod
     def _cloud_translator_class(backend: str):
@@ -138,41 +165,124 @@ class TranslationPipeline:
     def _streaming_asr_worker(self) -> None:
         """Stream audio into the online recognizer, showing live partials.
 
-        Live Japanese partials are rewritten in place as they are spoken. Endpoint
-        text is sentence-aggregated before translation so committed JP/VI pairs are
-        printed atomically and in order.
+        Live Japanese partials are rewritten in place as they are spoken. In the
+        default hybrid mode the online model is used ONLY for the live partial
+        display: completed utterances are segmented from the raw audio by VAD and
+        handed to the offline re-decode worker, which produces the accurate text
+        that is actually translated. With ZT_NO_REDECODE=1 the legacy behaviour is
+        used: the online endpoint text itself is sentence-aggregated and translated.
         """
         agreement = LocalAgreementBuffer(config.STREAMING_LOCAL_AGREEMENT_N)
         last_displayed: tuple[str, str] = ("", "")
-        while not self.stop_event.is_set():
-            try:
-                block = self._audio_queue.get(timeout=0.2)
-            except queue.Empty:
+        try:
+            while not self.stop_event.is_set():
                 try:
-                    self._flush_streaming_aggregator_if_due()
-                except Exception as exc:
-                    self.display.info(f"[ASR error] {exc}")
-                continue
-            try:
-                self.streaming_asr.accept(block)
-                partial = self.streaming_asr.partial()
-                if partial:
-                    self._last_stream_text_at = monotonic()
-                    committed, tail = agreement.update(partial)
-                    if (committed, tail) != last_displayed:
-                        self.display.show_source_partial(committed, tail)
-                        last_displayed = (committed, tail)
-                if self.streaming_asr.at_endpoint():
+                    block = self._audio_queue.get(timeout=0.2)
+                except queue.Empty:
+                    if not self._redecode:
+                        try:
+                            self._flush_streaming_aggregator_if_due()
+                        except Exception as exc:
+                            self.display.info(f"[ASR error] {exc}")
+                    continue
+                try:
+                    self.streaming_asr.accept(block)
+                    partial = self.streaming_asr.partial()
                     if partial:
-                        for sentence in self.aggregator.add(partial):
-                            self._last_stream_text_at = monotonic()
-                            self._enqueue_text(sentence, pre_shown=False)
-                    self.streaming_asr.reset()
-                    agreement.reset()
-                    last_displayed = ("", "")
-                self._flush_streaming_aggregator_if_due()
-            except Exception as exc:  # keep the pipeline alive on a single bad block
-                self.display.info(f"[ASR error] {exc}")
+                        self._last_stream_text_at = monotonic()
+                        committed, tail = agreement.update(partial)
+                        if (committed, tail) != last_displayed:
+                            self.display.show_source_partial(committed, tail)
+                            last_displayed = (committed, tail)
+
+                    if self._redecode:
+                        # Offline re-decode path: VAD owns the segment boundaries
+                        # (full audio incl. onsets) so the offline model never sees
+                        # a clipped head. The online model only drives the display.
+                        for utterance in self.segmenter.push(block):
+                            self._put_segment(utterance)
+
+                    if self.streaming_asr.at_endpoint():
+                        if not self._redecode and partial:
+                            for sentence in self.aggregator.add(partial):
+                                self._last_stream_text_at = monotonic()
+                                ev.log("aggregator_emit", text=sentence, reason="endpoint")
+                                self._enqueue_text(sentence, pre_shown=False)
+                        # Reset the online stream so the partial caption restarts
+                        # cleanly at each utterance (display only in redecode mode).
+                        self.streaming_asr.reset()
+                        agreement.reset()
+                        last_displayed = ("", "")
+                    if not self._redecode:
+                        self._flush_streaming_aggregator_if_due()
+                except Exception as exc:  # keep the pipeline alive on a single bad block
+                    self.display.info(f"[ASR error] {exc}")
+        finally:
+            if self._redecode:
+                # Flush any trailing in-progress utterance, then signal the
+                # re-decode worker to drain and exit (so the last words survive).
+                try:
+                    tail = self.segmenter.flush()
+                    if tail is not None:
+                        self._put_segment(tail)
+                except Exception as exc:
+                    ev.log("segment_flush_error", error=str(exc))
+                # Sentinel must reach the consumer; block with timeouts (the
+                # re-decode worker is still draining at this point) but never wedge
+                # forever if the queue is wedged and the consumer is gone.
+                while not self._segment_queue_put_sentinel():
+                    if not (self._redecode_thread and self._redecode_thread.is_alive()):
+                        break
+
+    def _segment_queue_put_sentinel(self) -> bool:
+        try:
+            self._segment_queue.put(_SEGMENT_SENTINEL, timeout=0.5)
+            return True
+        except queue.Full:
+            return False
+
+    def _put_segment(self, utterance) -> None:
+        """Hand a finalized raw-audio utterance to the offline re-decode worker.
+
+        Blocks (with backpressure logging) rather than dropping: the audio is
+        already-captured speech and dropping it is permanent content loss. The
+        queue is generously sized, so this only blocks under sustained CPU
+        overload, where stalling the online display is preferable to losing words.
+        """
+        duration_s = round(len(utterance) / float(config.SAMPLE_RATE), 2)
+        # Diagnose WHY the segment ended: a duration at the max bound means the
+        # silence endpoint never fired (VAD treated the whole window as voiced) and
+        # the utterance was force-cut mid-speech — the signal to raise VAD
+        # aggressiveness. Surfaced in the evidence log so this is visible per run.
+        max_s = config.VAD_MAX_UTTERANCE_MS / 1000.0
+        reason = "max_utterance" if duration_s >= max_s - (config.VAD_SILENCE_MS / 1000.0) else "silence"
+        while not self.stop_event.is_set() or self._draining.is_set():
+            try:
+                self._segment_queue.put(utterance, timeout=0.5)
+                ev.log("segment_finalized", duration_s=duration_s,
+                       reason=reason, queue_size=self._segment_queue.qsize())
+                return
+            except queue.Full:
+                ev.log("segment_queue_backpressure", duration_s=duration_s)
+        # Shutdown raced a full segment queue with no draining consumer: record
+        # the abandoned utterance so loss is never silent.
+        ev.log("segment_abandoned", duration_s=duration_s, reason="stop_event")
+
+    def _redecode_worker(self) -> None:
+        """Re-decode each finalized utterance's raw audio with the offline model.
+
+        Owns the offline ASR + the aggregate/enqueue path so that the translated
+        text comes from the strong model and ordering is preserved (single FIFO
+        consumer). Runs until the end-of-stream sentinel, draining every queued
+        utterance even after stop_event is set (shutdown drain)."""
+        while True:
+            item = self._segment_queue.get()
+            if item is _SEGMENT_SENTINEL:
+                return
+            try:
+                self._transcribe_and_enqueue(item)
+            except Exception as exc:  # one bad utterance must not kill the worker
+                ev.log("redecode_error", error=str(exc))
 
     def _flush_streaming_aggregator_if_due(self) -> None:
         if not self.streaming or self.aggregator is None:
@@ -193,18 +303,29 @@ class TranslationPipeline:
             return
         for sentence in self.aggregator.flush():
             self._last_stream_text_at = monotonic()
+            ev.log("aggregator_emit", text=sentence, reason="flush")
             self._enqueue_text(sentence, pre_shown=False)
 
     def _transcribe_and_enqueue(self, utterance) -> None:
         japanese = self.asr.transcribe(utterance).strip()
         if not japanese:
             return
+        ev.log("asr_final", text=japanese, n_chars=len(japanese))
         # Show the recognized Japanese immediately so the viewer sees what was
-        # said without waiting for the (slower) translation stage to finish.
-        self.display.show_source(japanese)
-        self._enqueue_text(japanese, pre_shown=True)
+        # said without waiting for the (slower) translation stage to finish. The
+        # seq ties this source line to its later target line so the display can
+        # keep the JP/VI pair together even when batching shows several sources
+        # before the first translation is ready.
+        seq = self._next_seq()
+        self.display.show_source(japanese, seq=seq)
+        self._enqueue_text(japanese, pre_shown=True, seq=seq)
 
-    def _enqueue_text(self, japanese: str, pre_shown: bool) -> None:
+    def _next_seq(self) -> int:
+        with self._seq_lock:
+            self._seq += 1
+            return self._seq
+
+    def _enqueue_text(self, japanese: str, pre_shown: bool, seq: int | None = None) -> None:
         if not pre_shown:
             stripped = japanese.strip()
             now = monotonic()
@@ -213,42 +334,160 @@ class TranslationPipeline:
                 and len(stripped) >= config.STREAM_DEDUP_MIN_CHARS
                 and now - self._last_enqueued_at <= config.STREAM_DEDUP_WINDOW_SEC
             ):
+                ev.log("dedup_skip", text=stripped, n_chars=len(stripped))
                 return
             self._last_enqueued_text = stripped
             self._last_enqueued_at = now
 
-        # Lock makes the drop-oldest get+put atomic against the consumer, so a
-        # concurrent take cannot cause us to drop an extra (still-fresh) item.
-        with self._text_queue_lock:
+        if seq is None:
+            seq = self._next_seq()
+        item = (seq, japanese, pre_shown)
+        ev.log(
+            "enqueue",
+            seq=seq,
+            text=japanese,
+            pre_shown=pre_shown,
+            queue_size=self._text_queue.qsize(),
+        )
+        # Recognized text is already-captured meeting content; dropping it loses
+        # the user's words permanently. Apply backpressure (block, re-checking
+        # the stop flag) instead of drop-oldest so nothing recognized is lost.
+        # Under sustained overload this stalls the ASR worker, letting the *audio*
+        # queue shed raw blocks instead — a far smaller content loss. During an
+        # orderly shutdown drain (_draining) we keep enqueueing past stop_event so
+        # the re-decode worker's drained tail utterances are never abandoned.
+        while not self.stop_event.is_set() or self._draining.is_set():
             try:
-                self._text_queue.put_nowait((japanese, pre_shown))
+                self._text_queue.put(item, timeout=0.2)
+                return
             except queue.Full:
-                # Drop oldest pending text so the freshest speech wins under load.
-                try:
-                    self._text_queue.get_nowait()
-                except queue.Empty:
-                    pass
-                try:
-                    self._text_queue.put_nowait((japanese, pre_shown))
-                except queue.Full:
-                    pass
+                ev.log("text_queue_backpressure", seq=seq, queue_size=self._text_queue.qsize())
+                continue
+        # Shutdown raced an overloaded queue: record the abandoned item so the
+        # audit trail never has a silent seq gap (stop() drains the queue, but an
+        # item still blocked here was never enqueued).
+        ev.log("enqueue_abandoned", seq=seq, text=japanese, reason="stop_event")
+
 
     def _translate_worker(self) -> None:
-        """Translate queued Japanese text into Vietnamese and display it."""
-        while not self.stop_event.is_set():
+        """Translate queued Japanese text into Vietnamese and display it.
+
+        Drains a batch of pending items and translates them together so a fast
+        meeting cannot build an unbounded backlog. Items are processed in FIFO
+        order and displayed by identity, so JP/VI pairs never cross.
+        """
+        while not self.stop_event.is_set() or self._draining.is_set():
             try:
-                japanese, pre_shown = self._text_queue.get(timeout=0.2)
+                first = self._text_queue.get(timeout=0.2)
             except queue.Empty:
                 continue
+            batch = [first]
+            while len(batch) < config.TRANSLATE_MAX_BATCH:
+                try:
+                    batch.append(self._text_queue.get_nowait())
+                except queue.Empty:
+                    break
             try:
-                vietnamese = self.translator.translate(japanese).strip()
-            except Exception as exc:
+                self._translate_and_display_batch(batch)
+            except Exception as exc:  # keep the translate thread alive
+                # A dead translate thread stops draining _text_queue, which makes
+                # _enqueue_text backpressure-block the ASR worker forever and lose
+                # the rest of the meeting — so never let a batch kill the loop.
                 self.display.info(f"[Translate error] {exc}")
-                continue
-            if pre_shown:
-                self.display.show_target(vietnamese or "(...)")
-            else:
-                self.display.show_pair(japanese, vietnamese or "(...)")
+                for seq, jp, _ in batch:
+                    ev.log("translate_error", seq=seq, text=jp, error=str(exc))
+
+    def _translate_and_display_batch(self, batch: list[tuple[int, str, bool]]) -> None:
+        started = monotonic()
+        try:
+            translations = self._translate_batch_flattened(batch)
+        except Exception as exc:
+            # Fall back to per-item translation so one bad item cannot drop the
+            # whole batch; a still-failing item is logged and shown as "(...)".
+            self.display.info(f"[Translate error] {exc}")
+            translations = []
+            for seq, jp, _ in batch:
+                try:
+                    translations.append(self.translator.translate(jp).strip())
+                except Exception as item_exc:
+                    ev.log("translate_error", seq=seq, text=jp, error=str(item_exc))
+                    translations.append("")
+        # Guard against any translation/source count mismatch: zip() would
+        # silently drop the unpaired tail items (lost content). Pad short and
+        # never truncate the batch.
+        if len(translations) < len(batch):
+            for seq, jp, _ in batch[len(translations):]:
+                ev.log("translate_count_mismatch", seq=seq, text=jp,
+                       got=len(translations), expected=len(batch))
+            translations = translations + [""] * (len(batch) - len(translations))
+        latency_ms = round((monotonic() - started) * 1000.0, 1)
+
+        for (seq, japanese, pre_shown), vietnamese in zip(batch, translations):
+            ev.log(
+                "translate",
+                seq=seq,
+                jp=japanese,
+                vi=vietnamese,
+                latency_ms=latency_ms,
+                batch=len(batch),
+            )
+            # Isolate display/log failures per item so one bad render cannot drop
+            # the rest of an already-translated batch.
+            try:
+                if pre_shown:
+                    self.display.show_target(vietnamese or "(...)", japanese=japanese, seq=seq)
+                else:
+                    self.display.show_pair(japanese, vietnamese or "(...)")
+                ev.log("display", seq=seq, pre_shown=pre_shown, jp=japanese, vi=vietnamese)
+            except Exception as exc:
+                ev.log("display_error", seq=seq, jp=japanese, vi=vietnamese, error=str(exc))
+
+    def _translate_batch_flattened(self, batch: list[tuple[int, str, bool]]) -> list[str]:
+        """Translate every sentence across all items in one CTranslate2 batch.
+
+        Each item may itself be multiple sentences (NLLB drops trailing ones if
+        not split). We split every item, translate the flattened sentence list in
+        a single native call so CTranslate2 parallelizes across the whole batch —
+        the throughput that clears backlog fast — then rejoin per item in order.
+        """
+        per_item_sentences = [split_japanese_sentences(jp) or [jp] for _, jp, _ in batch]
+        flat = [s for sentences in per_item_sentences for s in sentences]
+        if not flat:
+            return ["" for _ in batch]
+        flat_vi = self.translator.translate_many(flat)
+
+        out: list[str] = []
+        cursor = 0
+        for (seq, _jp, _pre), sentences in zip(batch, per_item_sentences):
+            count = len(sentences)
+            joined, dropped = join_translations(
+                sentences, flat_vi[cursor : cursor + count]
+            )
+            for idx, src in dropped:
+                ev.log("empty_translation", seq=seq, sentence_index=idx, jp=src)
+            out.append(joined.strip())
+            cursor += count
+        return out
+
+    def _drain_text_queue(self) -> None:
+        """Translate and display any items left in the text queue at shutdown.
+
+        Called from the main thread in stop() AFTER the workers are joined, so the
+        non-thread-safe translator/display are no longer used concurrently. Drains
+        in TRANSLATE_MAX_BATCH-sized chunks (not one unbounded batch) to bound
+        memory and native call size.
+        """
+        while True:
+            batch: list[tuple[int, str, bool]] = []
+            while len(batch) < config.TRANSLATE_MAX_BATCH:
+                try:
+                    batch.append(self._text_queue.get_nowait())
+                except queue.Empty:
+                    break
+            if not batch:
+                return
+            ev.log("shutdown_drain", count=len(batch))
+            self._translate_and_display_batch(batch)
 
     # ─── Lifecycle ───────────────────────────────────────────────────────
     def start(self) -> None:
@@ -256,6 +495,8 @@ class TranslationPipeline:
             self.cloud_translator.start()
         self._capture.start()
         self._asr_thread.start()
+        if self._redecode_thread is not None:
+            self._redecode_thread.start()
         if self._translate_thread is not None:
             self._translate_thread.start()
 
@@ -277,6 +518,10 @@ class TranslationPipeline:
             self.stop(flush_tail=not interrupted)
 
     def stop(self, flush_tail: bool = True) -> None:
+        if self._redecode:
+            # Permit the re-decode worker's drained tail utterances to keep
+            # enqueueing past stop_event during the orderly shutdown below.
+            self._draining.set()
         self.stop_event.set()
 
         if self.cloud:
@@ -294,19 +539,57 @@ class TranslationPipeline:
         # before the interpreter tears the native libraries down — otherwise a
         # still-running native call during shutdown can segfault the process.
         self._capture.join(timeout=2.0)
+        # The online worker, on exit, flushes the VAD tail and pushes the
+        # end-of-stream sentinel that lets the re-decode worker drain and exit.
         self._asr_thread.join(timeout=config.WORKER_SHUTDOWN_TIMEOUT)
+        if self._redecode_thread is not None:
+            # Drain finalized utterances through the offline model. On Ctrl+C
+            # (flush_tail=False) bound the wait so shutdown stays responsive. The
+            # translate worker stays alive during this drain (its loop also runs
+            # while _draining) so re-decoded text is consumed, not wedged in a
+            # full _text_queue.
+            redecode_timeout = config.WORKER_SHUTDOWN_TIMEOUT if flush_tail else 2.0
+            self._redecode_thread.join(timeout=redecode_timeout)
+            # Re-decode is done producing: let the translate worker exit.
+            self._draining.clear()
         self._translate_thread.join(timeout=config.WORKER_SHUTDOWN_TIMEOUT)
 
         if not flush_tail:
             return
         # If a worker is still running (join timed out mid-inference), skip the
-        # trailing flush rather than race on the non-thread-safe models.
-        if self._asr_thread.is_alive() or self._translate_thread.is_alive():
+        # trailing flush rather than race on the non-thread-safe models — but
+        # surface how much recognized text is being abandoned so it is never a
+        # silent loss.
+        redecode_busy = self._redecode_thread is not None and self._redecode_thread.is_alive()
+        if self._asr_thread.is_alive() or self._translate_thread.is_alive() or redecode_busy:
+            pending = self._text_queue.qsize() + self._segment_queue.qsize()
+            if pending:
+                ev.log("shutdown_unflushed", queue_size=pending)
+                self.display.info(
+                    f"[Shutdown] {pending} recognized item(s) not translated "
+                    "(worker still busy)."
+                )
             return
+
+        # The translate worker has exited, so the text queue may still hold
+        # recognized items it never drained. These are already-captured words —
+        # translate and display them (on this thread, now that the worker is
+        # joined and the models are idle) before flushing the in-progress tail.
+        # Queued items are chronologically older than the in-progress tail, so
+        # drain them first to keep on-screen order.
+        try:
+            self._drain_text_queue()
+        except Exception as exc:
+            ev.log("shutdown_drain_error", error=str(exc))
 
         # Flush any trailing in-progress utterance so the last words aren't lost.
         try:
-            if self.streaming:
+            if self._redecode:
+                # The VAD tail was already finalized into the segment queue and
+                # translated via the re-decode worker drain above; nothing else
+                # to flush (the online stream is display-only in this mode).
+                pass
+            elif self.streaming:
                 self.streaming_asr.finalize_tail()
                 tail_text = self.streaming_asr.partial().strip()
                 sentences: list[str] = []

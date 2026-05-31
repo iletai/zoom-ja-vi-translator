@@ -98,6 +98,33 @@ def test_dangling_fragment_detection() -> None:
     assert not agg.is_dangling("分かりました")
 
 
+def test_polite_ne_not_orphaned_in_unpunctuated_runon() -> None:
+    # ですね/ますね followed straight by the next clause must keep ね with its own
+    # sentence, never orphan it onto the next ("です"+"ねとても…" was the bug).
+    from src.sentence_aggregator import split_japanese_sentences
+
+    assert split_japanese_sentences("すぐに答える練習ですねとてもいいテーマです") == [
+        "すぐに答える練習ですね",
+        "とてもいいテーマです",
+    ]
+    # No content is lost regardless of where the boundary lands.
+    src = "今日はいい天気ですねでも明日は雨です"
+    assert "".join(split_japanese_sentences(src)) == src
+
+
+def test_sentence_final_yo_does_not_corrupt_following_word() -> None:
+    # よ after a polite base must NOT be consumed when it actually begins よろしく
+    # (the asymmetry that makes the ね exception safe but not a よ exception).
+    from src.sentence_aggregator import split_japanese_sentences
+
+    assert split_japanese_sentences("おはようございますよろしくお願いします") == [
+        "おはようございます",
+        "よろしくお願いします",
+    ]
+    # A genuine sentence-final よ at end of buffer stays attached.
+    assert split_japanese_sentences("いいですよ") == ["いいですよ"]
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

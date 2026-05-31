@@ -58,14 +58,14 @@ class RecordingDisplay(SubtitleDisplay):
         self.pairs.append((japanese, vietnamese))
         super().show_pair(japanese, vietnamese)
 
-    def show_source(self, japanese: str) -> None:
+    def show_source(self, japanese: str, seq=None) -> None:
         self._pending_ja.append(japanese)
-        super().show_source(japanese)
+        super().show_source(japanese, seq=seq)
 
-    def show_target(self, vietnamese: str) -> None:
+    def show_target(self, vietnamese: str, japanese=None, seq=None) -> None:
         if self._pending_ja:
             self.pairs.append((self._pending_ja.popleft(), vietnamese))
-        super().show_target(vietnamese)
+        super().show_target(vietnamese, japanese=japanese, seq=seq)
 
 
 class FakeCapture(threading.Thread):

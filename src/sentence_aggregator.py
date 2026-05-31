@@ -11,9 +11,35 @@ sentences using a continuation-particle policy:
 
 which keeps mid-sentence forms intact (です*が*, です*から*, ください*まして*…)
 while still separating consecutive turns even when no explicit connective word
-sits between them (です えっ… → split).
+sits between them (です えっ… → split). Greeting set-phrases that carry no
+polite terminal (こんにちは / ようこそ / …) are also treated as boundaries so
+greeting run-ons (ようこそ皆さんお元気ですか) do not reach NLLB as one block.
 """
 from __future__ import annotations
+
+
+def split_japanese_sentences(text: str) -> list[str]:
+    """Split Japanese ``text`` into whole sentences (stateless, pure).
+
+    Reuses :class:`SentenceAggregator`'s tested boundary policy (hard finals
+    plus polite terminals guarded by continuation particles) without any
+    streaming state. Behaviour:
+
+    - a single sentence returns ``[text]`` (stripped),
+    - empty / whitespace-only input returns ``[]``,
+    - a multi-sentence string is split at every boundary, including a terminal
+      sitting at the very end.
+
+    This is the segmentation NLLB needs: feeding it a multi-sentence block makes
+    it silently translate only the first sentence and drop the rest, so the
+    translator splits first and translates each sentence in turn.
+    """
+    if not text or not text.strip():
+        return []
+    aggregator = SentenceAggregator()
+    sentences = aggregator.add(text)
+    sentences.extend(aggregator.flush())
+    return sentences or [text.strip()]
 
 
 class SentenceAggregator:
@@ -61,6 +87,22 @@ class SentenceAggregator:
 
     # Sentence-final particles consumed as part of the terminal before a split.
     _FINAL_PARTICLES = frozenset("かねよわさ")
+
+    # Greeting / set-phrase sentence units that carry NO polite terminal and so
+    # would otherwise glue to the next turn (e.g. ようこそ皆さん…, こんにちは皆さん…).
+    # Streaming JA ASR emits no punctuation, so these run-ons reach NLLB as one
+    # block and the trailing sentences are silently dropped. Splitting after a
+    # greeting recovers them; over-splitting a genuine single greeting only mildly
+    # affects wording, never loses content. Matched longest-first.
+    _GREETINGS = (
+        "おはようございます",
+        "ありがとうございます",
+        "はじめまして",
+        "こんにちは",
+        "こんばんは",
+        "おはよう",
+        "ようこそ",
+    )
 
     # Casual predicate-final の (question/nominalizer) used as a secondary
     # boundary only when a strong turn marker follows.
@@ -157,6 +199,25 @@ class SentenceAggregator:
                     # Terminal at end of buffer: keep buffered, a continuation
                     # particle (が/から/…) might still arrive.
 
+            # Secondary: greeting / set-phrase boundary (no polite terminal).
+            for greeting in self._GREETINGS:
+                if text.startswith(greeting, index):
+                    end = index + len(greeting)
+                    rest = text[end:]
+                    # Don't split when the greeting is grammatically continued
+                    # by a binding particle (こんにちは*と*言う, ようこそ日本*へ*…):
+                    # treat as mid-sentence. NOTE: deliberately excludes は/が/も/で
+                    # because では/でも/はい/もう commonly START the next sentence
+                    # after a greeting (こんにちはでは始めます → must split).
+                    if rest and rest[0] in "とのにへを":
+                        break
+                    if end < n:
+                        return end
+                    if flush:
+                        return end
+                    # Greeting at end of buffer: more may still arrive.
+                    break
+
             # Secondary: casual predicate-final の followed by a turn marker.
             for predicate in self._NO_PREDICATES:
                 if text.startswith(predicate, index):
@@ -184,7 +245,31 @@ class SentenceAggregator:
                 nxt = text[j + 1 : j + 2]
                 if nxt in ("ら", "と", "も") or text.startswith("かどうか", j):
                     return None
-            j += 1
+                j += 1
+                continue
+            # よ/わ/さ/ね are ALSO the first kana of very common content words
+            # (よろしく, わかりました, さようなら, ねえ…). Treat one as a
+            # sentence-final particle only when what follows is genuinely
+            # terminal — end of buffer, hard punctuation, whitespace, or a
+            # turn-starter; otherwise it begins the next word, so stop and split
+            # BEFORE it (at the base boundary) instead of mid-word.
+            # EXCEPTION: ね immediately after a polite base (ですね / ますね) is
+            # unambiguously the confirmation particle — no content word attaches
+            # straight onto です/ます — so consume it even when content follows,
+            # avoiding the「ですね|とても…」→「です」+「ねとても…」orphan.
+            if text[j] == "ね" and j == end:
+                j += 1
+                continue
+            after = text[j + 1 :]
+            if (
+                not after
+                or after[0] in self._HARD_FINALS
+                or after[0].isspace()
+                or any(after.lstrip().startswith(s) for s in self._STARTERS)
+            ):
+                j += 1
+                continue
+            break
         # Absorb a hard final (。！？) that closes this same sentence.
         if j < n and text[j] in self._HARD_FINALS:
             j += 1

@@ -56,6 +56,17 @@ def parse_args() -> argparse.Namespace:
         "AZURE_SPEECH_REGION env vars and 'pip install -r requirements-cloud.txt'. "
         "Audio is sent to the provider; omit --cloud for fully offline local mode.",
     )
+    parser.add_argument(
+        "--log",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PATH",
+        help="write a structured JSONL evidence log of every pipeline stage "
+        "(asr/aggregator/enqueue/queue_drop/dedup_skip/translate/display) for "
+        "debugging dropped data. Defaults to test_audio/evidence/run_<ts>.jsonl "
+        "when given with no path. Also enabled via ZT_EVIDENCE_LOG=<path>.",
+    )
     return parser.parse_args()
 
 
@@ -92,6 +103,24 @@ def select_device(args: argparse.Namespace, display: SubtitleDisplay):
     return device
 
 
+def _configure_evidence_log(args: argparse.Namespace, display: SubtitleDisplay) -> None:
+    """Enable JSONL evidence logging from --log / ZT_EVIDENCE_LOG if requested."""
+    from src import evidence_log
+
+    path = args.log
+    if path is None:
+        path = config.EVIDENCE_LOG_PATH or None
+    elif path == "":
+        # --log with no argument: default to a timestamped file under evidence/.
+        import time
+
+        evidence_dir = config.PROJECT_ROOT / "test_audio" / "evidence"
+        path = str(evidence_dir / f"run_{time.strftime('%Y%m%d_%H%M%S')}.jsonl")
+    resolved = evidence_log.configure(path)
+    if resolved is not None:
+        display.info(f"Evidence log: {resolved}")
+
+
 def main() -> int:
     args = parse_args()
     display = SubtitleDisplay()
@@ -100,43 +129,58 @@ def main() -> int:
         audio_capture.list_devices()
         return 0
 
-    device = select_device(args, display)
-    if device is None:
-        return 1
+    _configure_evidence_log(args, display)
+    from src import evidence_log
 
-    # Imported lazily so --list-devices works even before models are downloaded.
-    from src.pipeline import TranslationPipeline
-
-    backend = args.cloud if args.cloud else "local"
     try:
-        pipeline = TranslationPipeline(
-            device=device,
-            display=display,
-            streaming=args.streaming,
-            backend=backend,
-        )
-    except FileNotFoundError as exc:
-        display.info(str(exc))
-        return 1
-    except ValueError as exc:  # e.g. missing cloud credentials
-        display.info(str(exc))
-        return 1
+        device = select_device(args, display)
+        if device is None:
+            return 1
 
-    if args.cloud:
-        mode = f"cloud:{args.cloud}"
-        langs = f"{config.CLOUD_SOURCE_LANG} -> {config.CLOUD_TARGET_LANG}"
-    elif args.streaming:
-        mode = "streaming"
-        langs = f"{config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}"
-    else:
-        mode = "offline"
-        langs = f"{config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}"
-    display.info(
-        f"Listening [{mode}]... ({langs}). Press Ctrl+C to stop."
-    )
-    pipeline.run_forever()
-    display.info("Stopped.")
-    return 0
+        # Imported lazily so --list-devices works even before models are downloaded.
+        from src.pipeline import TranslationPipeline
+
+        backend = args.cloud if args.cloud else "local"
+        try:
+            pipeline = TranslationPipeline(
+                device=device,
+                display=display,
+                streaming=args.streaming,
+                backend=backend,
+            )
+        except FileNotFoundError as exc:
+            display.info(str(exc))
+            return 1
+        except ImportError as exc:  # e.g. webrtcvad missing for VAD re-decode
+            display.info(
+                f"Missing dependency for offline re-decode: {exc}. "
+                "Install webrtcvad or set ZT_NO_REDECODE=1 to use the online path."
+            )
+            return 1
+        except ValueError as exc:  # e.g. missing cloud credentials
+            display.info(str(exc))
+            return 1
+
+        if args.cloud:
+            mode = f"cloud:{args.cloud}"
+            langs = f"{config.CLOUD_SOURCE_LANG} -> {config.CLOUD_TARGET_LANG}"
+        elif args.streaming:
+            mode = "streaming"
+            langs = f"{config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}"
+        else:
+            mode = "offline"
+            langs = f"{config.NLLB_SOURCE_LANG} -> {config.NLLB_TARGET_LANG}"
+        display.info(
+            f"Listening [{mode}]... ({langs}). Press Ctrl+C to stop."
+        )
+        pipeline.run_forever()
+        display.info("Stopped.")
+        return 0
+    finally:
+        # Always flush/close the evidence log and leave the terminal clean, even
+        # when an error path (device selection, model load, audio failure) skips
+        # the normal shutdown above.
+        evidence_log.close()
 
 
 if __name__ == "__main__":

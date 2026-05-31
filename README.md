@@ -306,7 +306,58 @@ export NLLB_CT2_DIR=models/nllb-200-distilled-600M-ct2-int8
 
 ---
 
-## Project Structure
+## Reliability: complete translation & evidence logging
+
+Two safeguards keep a long meeting from silently losing content.
+
+### Sentence-aware translation (no dropped sentences)
+
+NLLB-200 is sentence-trained: handed a block of several Japanese sentences it
+translates only the **first** and silently drops the rest (e.g.
+`本日の会議を始めます。資料を確認してください。` → only "Tôi sẽ bắt đầu cuộc họp hôm nay.",
+losing the second sentence). The translator now follows documented MT best
+practice — it segments the source into whole sentences first, translates each in
+a single batched CTranslate2 call, then rejoins them — so no sentence is dropped.
+Cross-item batching also raises throughput, shrinking the backlog that used to
+force the queue to shed recognized speech. Recognized text is now preserved via
+backpressure instead of being dropped under load. Disable splitting for
+benchmarking with `ZT_NO_SENTENCE_SPLIT=1`.
+
+Because the Japanese streaming ASR emits **no punctuation** and ends segments on
+acoustic silence (not grammar), it can glue several turns into one run-on. The
+segmenter therefore also splits at polite terminals (です/ます/…) **and at
+greeting set-phrases** (こんにちは / ようこそ / おはよう / …) that carry no
+terminal, so a greeting run-on like
+`皆さんこんにちは…ようこそ皆さんお元気ですか` is separated into three sentences
+instead of reaching NLLB as one block (which dropped the trailing
+`お元気ですか`). Over-splitting only affects wording, never loses content.
+
+### Evidence logging (debug where data was lost)
+
+For auditing a meeting where "a line went missing", enable a structured JSONL
+log of every pipeline stage:
+
+```bash
+python3 main.py --system-audio --streaming --log
+# or to a specific file / via env:
+python3 main.py --system-audio --log run.jsonl
+ZT_EVIDENCE_LOG=run.jsonl python3 main.py --system-audio
+```
+
+Each recognized utterance carries a monotonic `seq` id so its whole life is
+traceable end to end:
+
+```text
+asr_final / aggregator_emit → enqueue → translate → display
+                                    ↘ dedup_skip / queue drop (loss is logged)
+```
+
+Every record includes `seq`, a monotonic timestamp, the thread, and stage-
+specific fields (`jp`, `vi`, `latency_ms`, `batch`, `queue_size`). Filtering the
+log by a `seq` shows exactly where — if anywhere — a sentence was lost. Logging
+is opt-in and a no-op when not configured.
+
+---
 
 ```
 zoom-translator/
@@ -328,7 +379,9 @@ zoom-translator/
     ├── asr.py                # ReazonSpeech k2 Japanese ASR
     ├── streaming_asr.py      # streaming Zipformer JA ASR (--streaming)
     ├── cloud_translator.py   # Azure Speech Translation backend (--cloud azure)
-    ├── translator.py         # NLLB-600M CTranslate2 JA→VI
+    ├── translator.py         # NLLB-600M CTranslate2 JA→VI (sentence-aware, batched)
+    ├── sentence_aggregator.py # JP sentence segmentation (shared by translator)
+    ├── evidence_log.py       # opt-in JSONL per-stage logging (--log)
     ├── pipeline.py           # multi-threaded orchestration
     └── display.py            # terminal subtitle output
 ```

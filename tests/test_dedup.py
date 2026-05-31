@@ -15,14 +15,17 @@ from src.pipeline import TranslationPipeline  # noqa: E402
 def make_pipeline_stub() -> TranslationPipeline:
     inst = TranslationPipeline.__new__(TranslationPipeline)
     inst._text_queue = queue.Queue(maxsize=32)
-    inst._text_queue_lock = threading.Lock()
+    inst._seq = 0
+    inst._seq_lock = threading.Lock()
+    inst.stop_event = threading.Event()
     inst._last_enqueued_text = ""
     inst._last_enqueued_at = 0.0
     return inst
 
 
 def queue_items(inst: TranslationPipeline) -> list[tuple[str, bool]]:
-    return list(inst._text_queue.queue)
+    # Items are (seq, japanese, pre_shown); the seq id is irrelevant to dedup.
+    return [(japanese, pre_shown) for _seq, japanese, pre_shown in inst._text_queue.queue]
 
 
 def test_duplicate_long_streaming_sentence_is_suppressed() -> None:

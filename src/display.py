@@ -31,6 +31,10 @@ class SubtitleDisplay:
         # terminal line (printed without a newline). Any method that prints a
         # committed line must clear it first so the two don't run together.
         self._partial_active = False
+        # seq of the most recent show_source() line that has not yet had its
+        # paired target printed. Lets show_target keep the JP/VI pair together
+        # even when batching prints several sources before the first translation.
+        self._last_source_seq: int | None = None
 
     @staticmethod
     def _char_width(ch: str) -> int:
@@ -94,6 +98,7 @@ class SubtitleDisplay:
         vi_line = "  " + self._wrap(f"VI {vietnamese}", _VI_COLOR)
         with self._lock:
             print(f"{self._clear_partial()}\n{header}\n{jp_line}\n{vi_line}", flush=True)
+            self._last_source_seq = None
 
     def show_pair(self, japanese: str, vietnamese: str) -> None:
         """Atomically print one committed Japanese -> Vietnamese subtitle pair."""
@@ -104,25 +109,50 @@ class SubtitleDisplay:
         with self._lock:
             clear = self._clear_partial()
             print(f"{clear}\n{header}\n{jp_line}\n{vi_line}", flush=True)
+            self._last_source_seq = None
 
-    def show_source(self, japanese: str) -> None:
+    def show_source(self, japanese: str, seq: int | None = None) -> None:
         """Print the recognized Japanese immediately, before translation is ready.
 
         Showing the source line as soon as ASR completes drastically cuts the
         *perceived* latency in a live meeting: the viewer sees what was just said
         within ~2 s, then the Vietnamese line follows when the translator finishes.
+        ``seq`` identifies this source so the matching ``show_target`` can detect
+        whether another source was printed in between (batching) and, if so,
+        reprint the pair together instead of attaching VI under the wrong JP.
         """
         timestamp = time.strftime("%H:%M:%S")
         header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
         jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
         with self._lock:
             print(f"{self._clear_partial()}\n{header}\n{jp_line}", flush=True)
+            self._last_source_seq = seq
 
-    def show_target(self, vietnamese: str) -> None:
-        """Print the Vietnamese line for the most recently shown source utterance."""
+    def show_target(
+        self, vietnamese: str, japanese: str | None = None, seq: int | None = None
+    ) -> None:
+        """Print the Vietnamese line for a previously shown source utterance.
+
+        If this target still directly follows its own source line (``seq`` matches
+        the last source printed), the VI line is appended inline. Otherwise another
+        source was printed in between (translation batching), so the whole JP/VI
+        pair is reprinted together to avoid attaching VI under the wrong JP. When
+        ``seq``/``japanese`` are omitted (cloud backend) the legacy inline
+        behaviour is preserved.
+        """
         vi_line = "  " + self._wrap(f"VI {vietnamese}", _VI_COLOR)
         with self._lock:
-            print(f"{self._clear_partial()}{vi_line}", flush=True)
+            superseded = (
+                seq is not None and seq != self._last_source_seq and japanese is not None
+            )
+            if superseded:
+                timestamp = time.strftime("%H:%M:%S")
+                header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
+                jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
+                print(f"{self._clear_partial()}\n{header}\n{jp_line}\n{vi_line}", flush=True)
+            else:
+                print(f"{self._clear_partial()}{vi_line}", flush=True)
+            self._last_source_seq = None
 
     @classmethod
     def _truncate_segments(cls, committed: str, tail: str, max_width: int) -> tuple[str, str, str]:
@@ -177,9 +207,11 @@ class SubtitleDisplay:
         with self._lock:
             # Clear the in-progress partial line, then print the committed pair.
             print(f"{self._clear_partial()}{header}\n{jp_line}", flush=True)
+            self._last_source_seq = None
 
     def info(self, message: str) -> None:
         """Print a status/diagnostic line."""
         with self._lock:
             text = self._wrap(message, _DIM) if self._color else message
             print(f"{self._clear_partial()}{text}", flush=True)
+            self._last_source_seq = None
