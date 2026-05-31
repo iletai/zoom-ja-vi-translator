@@ -1,8 +1,12 @@
 # Virtual environments
 .venv/
 .venv-arm64/
+.desloppify-venv/
 venv/
 env/
+
+# Desloppify local state
+.desloppify/
 
 # Downloaded models (fetch with scripts/download_models.py)
 models/
@@ -20,3 +24,8 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Understand-Anything knowledge graph — commit the graph, ignore local scratch
+.understand-anything/intermediate/
+.understand-anything/tmp/
+.understand-anything/diff-overlay.json

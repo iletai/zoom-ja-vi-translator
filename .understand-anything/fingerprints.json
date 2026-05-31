@@ -1,0 +1,3493 @@
+{
+  "version": "1.0.0",
+  "gitCommitHash": "e343fdfacd12f3d9b7d15412e4f0c366f52eda09",
+  "generatedAt": "2026-05-31T14:59:39.632Z",
+  "files": {
+    "CLAUDE.md": {
+      "filePath": "CLAUDE.md",
+      "contentHash": "d17467b72cb15fab55f7d3da7c81a9ff840295903c30a57002620fccf35e1f3c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 52,
+      "hasStructuralAnalysis": true
+    },
+    "config.py": {
+      "filePath": "config.py",
+      "contentHash": "5febab6f1cfd8ee3749c80d5583cae09a5eba7381868d69a1066903e5da1240f",
+      "functions": [
+        {
+          "name": "_env_flag",
+          "params": [
+            "name",
+            "default"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "platform",
+          "specifiers": [
+            "_platform"
+          ]
+        }
+      ],
+      "exports": [
+        "_env_flag"
+      ],
+      "totalLines": 293,
+      "hasStructuralAnalysis": true
+    },
+    "main.py": {
+      "filePath": "main.py",
+      "contentHash": "74a3dd8ab6b847beb1df66a25124efb727d2a94889aa5fc3660db9c180fe44df",
+      "functions": [
+        {
+          "name": "parse_args",
+          "params": [],
+          "returnType": "argparse.Namespace",
+          "exported": true,
+          "lineCount": 51
+        },
+        {
+          "name": "select_device",
+          "params": [
+            "args",
+            "display"
+          ],
+          "exported": true,
+          "lineCount": 31
+        },
+        {
+          "name": "_configure_evidence_log",
+          "params": [
+            "args",
+            "display"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "_save_transcript",
+          "params": [
+            "log_path",
+            "display"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 62
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src",
+          "specifiers": [
+            "audio_capture"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        }
+      ],
+      "exports": [
+        "parse_args",
+        "select_device",
+        "_configure_evidence_log",
+        "_save_transcript",
+        "main"
+      ],
+      "totalLines": 224,
+      "hasStructuralAnalysis": true
+    },
+    "README.md": {
+      "filePath": "README.md",
+      "contentHash": "47cf2920ba236629de51be29c5faf525dbeb5dcf11e4fca9cf8fd11118fe3820",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 473,
+      "hasStructuralAnalysis": true
+    },
+    "requirements-cloud.txt": {
+      "filePath": "requirements-cloud.txt",
+      "contentHash": "ed98de2cb1773ba2433fb41141954cb9ea2ffe2a3e4bef9a97c7b085319ccf1c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 12,
+      "hasStructuralAnalysis": false
+    },
+    "requirements-web.txt": {
+      "filePath": "requirements-web.txt",
+      "contentHash": "ccf2dafd4461759649ba0996d101755b3506a8190d43441010ef36ab02a0538b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 5,
+      "hasStructuralAnalysis": false
+    },
+    "requirements.txt": {
+      "filePath": "requirements.txt",
+      "contentHash": "b66163d9be22d91706f90ecb9c58d25e6c5d314095054d7a58bf7631c5ec26b7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 25,
+      "hasStructuralAnalysis": false
+    },
+    "run.ps1": {
+      "filePath": "run.ps1",
+      "contentHash": "a8706cf5caef99d725c152509cdf7ea2c56ed629ed66e61eb9778bc9f450b0d2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 57,
+      "hasStructuralAnalysis": false
+    },
+    "run.sh": {
+      "filePath": "run.sh",
+      "contentHash": "3a9a2cbdd0027acdff74e077488bd1cedd3a4be15d6ddb406a98c14502703afb",
+      "functions": [
+        {
+          "name": "is_arm64_python",
+          "params": [],
+          "exported": false,
+          "lineCount": 4
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 84,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/convert_nllb_1p3b.sh": {
+      "filePath": "scripts/convert_nllb_1p3b.sh",
+      "contentHash": "c0d96ebdfff8c6099673a4c8ed5f2499af1b218d4cde1e32da7112cc5992bcab",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 54,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/download_models.py": {
+      "filePath": "scripts/download_models.py",
+      "contentHash": "51a4b9711add635348b973443f9efaba6b7bcf2a97ec527d5ea6193e47ca9417",
+      "functions": [
+        {
+          "name": "parse_args",
+          "params": [],
+          "returnType": "argparse.Namespace",
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "require_huggingface_hub",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "is_non_empty_dir",
+          "params": [
+            "path"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "prepare_target_dir",
+          "params": [
+            "path",
+            "force"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "format_size",
+          "params": [
+            "num_bytes"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "directory_size",
+          "params": [
+            "path"
+          ],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "list_relative_files",
+          "params": [
+            "path",
+            "patterns"
+          ],
+          "returnType": "list[Path]",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "print_asr_artifacts",
+          "params": [
+            "path"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "snapshot_download",
+          "params": [
+            "repo_id",
+            "local_dir"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "download_asr",
+          "params": [
+            "force"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "pre_cache_nllb_tokenizer",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "download_nllb_preconverted",
+          "params": [
+            "force"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "convert_nllb",
+          "params": [
+            "force"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 40
+        },
+        {
+          "name": "download_streaming_asr",
+          "params": [
+            "force"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 26
+        }
+      ],
+      "classes": [
+        {
+          "name": "ModelDownloadError",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 2
+        }
+      ],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "shutil",
+          "specifiers": [
+            "shutil"
+          ]
+        },
+        {
+          "source": "subprocess",
+          "specifiers": [
+            "subprocess"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        }
+      ],
+      "exports": [
+        "ModelDownloadError",
+        "parse_args",
+        "require_huggingface_hub",
+        "is_non_empty_dir",
+        "prepare_target_dir",
+        "format_size",
+        "directory_size",
+        "list_relative_files",
+        "print_asr_artifacts",
+        "snapshot_download",
+        "download_asr",
+        "pre_cache_nllb_tokenizer",
+        "download_nllb_preconverted",
+        "convert_nllb",
+        "download_streaming_asr",
+        "main"
+      ],
+      "totalLines": 287,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/setup_macos_audio.sh": {
+      "filePath": "scripts/setup_macos_audio.sh",
+      "contentHash": "6c65660e7960f0972d680578e0668ef06c2de34d81a73f9cf84f1e644ce939d8",
+      "functions": [
+        {
+          "name": "find_blackhole_pkg",
+          "params": [],
+          "exported": false,
+          "lineCount": 10
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 82,
+      "hasStructuralAnalysis": true
+    },
+    "src/__init__.py": {
+      "filePath": "src/__init__.py",
+      "contentHash": "56993cab220b11fba1666489fac1657b5f68596d20ea67ab9c096cb102998e71",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 4,
+      "hasStructuralAnalysis": true
+    },
+    "src/asr.py": {
+      "filePath": "src/asr.py",
+      "contentHash": "92a69e37a3aa560508a21ec6e7d063f314ca55e1305a70429a696b40989b8946",
+      "functions": [],
+      "classes": [
+        {
+          "name": "JapaneseASR",
+          "methods": [
+            "__init__",
+            "transcribe",
+            "warmup",
+            "_find_model_files",
+            "_find_onnx",
+            "_find_tokens",
+            "_missing_model_error"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 80
+        }
+      ],
+      "imports": [
+        {
+          "source": "glob",
+          "specifiers": [
+            "glob"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "sherpa_onnx",
+          "specifiers": [
+            "sherpa_onnx"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        }
+      ],
+      "exports": [
+        "JapaneseASR"
+      ],
+      "totalLines": 106,
+      "hasStructuralAnalysis": true
+    },
+    "src/audio_capture.py": {
+      "filePath": "src/audio_capture.py",
+      "contentHash": "120b8caf0a21337517a39b68dd508d0e89f80a2aa3733b4a8abfea4df52fb932",
+      "functions": [
+        {
+          "name": "_device_name",
+          "params": [
+            "device"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "_is_loopback",
+          "params": [
+            "device"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "_native_sample_rate",
+          "params": [
+            "device"
+          ],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "_to_mono_float32",
+          "params": [
+            "audio"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "_resample_linear",
+          "params": [
+            "samples",
+            "source_rate",
+            "target_rate"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "list_devices",
+          "params": [],
+          "returnType": "list[dict[str, object]]",
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "find_loopback_device",
+          "params": [],
+          "returnType": "object | None",
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "_default_speaker_loopback",
+          "params": [
+            "devices"
+          ],
+          "returnType": "object | None",
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "get_default_microphone",
+          "params": [],
+          "returnType": "object",
+          "exported": true,
+          "lineCount": 2
+        }
+      ],
+      "classes": [
+        {
+          "name": "AudioCapture",
+          "methods": [
+            "__init__",
+            "run",
+            "_put_drop_oldest",
+            "_trim_to_configured_queue_size",
+            "_drop_oldest"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 52
+        }
+      ],
+      "imports": [
+        {
+          "source": "queue",
+          "specifiers": [
+            "queue"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "soundcard",
+          "specifiers": [
+            "sc"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        }
+      ],
+      "exports": [
+        "_device_name",
+        "_is_loopback",
+        "_native_sample_rate",
+        "_to_mono_float32",
+        "_resample_linear",
+        "AudioCapture",
+        "list_devices",
+        "find_loopback_device",
+        "_default_speaker_loopback",
+        "get_default_microphone"
+      ],
+      "totalLines": 211,
+      "hasStructuralAnalysis": true
+    },
+    "src/cloud_translator.py": {
+      "filePath": "src/cloud_translator.py",
+      "contentHash": "cdf51b556e350f62db4d91b61e253ca61318d8ba2932f9179bf26d844ef5ed40",
+      "functions": [
+        {
+          "name": "float32_to_pcm16",
+          "params": [
+            "samples"
+          ],
+          "returnType": "bytes",
+          "exported": true,
+          "lineCount": 16
+        }
+      ],
+      "classes": [
+        {
+          "name": "AzureSpeechTranslator",
+          "methods": [
+            "__init__",
+            "_build_recognizer",
+            "_on_recognizing",
+            "_on_recognized",
+            "_on_canceled",
+            "_handle_partial",
+            "_handle_final",
+            "start",
+            "push",
+            "stop"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 170
+        }
+      ],
+      "imports": [
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Callable"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        }
+      ],
+      "exports": [
+        "float32_to_pcm16",
+        "AzureSpeechTranslator"
+      ],
+      "totalLines": 220,
+      "hasStructuralAnalysis": true
+    },
+    "src/display.py": {
+      "filePath": "src/display.py",
+      "contentHash": "d423b65ff4e37fbd04eaf7023c30aa705f084df6180c5976ad55d9bb4ebcfb06",
+      "functions": [
+        {
+          "name": "_color_enabled",
+          "params": [],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 2
+        }
+      ],
+      "classes": [
+        {
+          "name": "SubtitleDisplay",
+          "methods": [
+            "__init__",
+            "_char_width",
+            "_display_width",
+            "_truncate_tail",
+            "_wrap",
+            "_clear_partial",
+            "show",
+            "show_pair",
+            "show_source",
+            "show_target",
+            "_truncate_segments",
+            "_partial_line",
+            "show_source_partial",
+            "finalize_source",
+            "info"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 195
+        }
+      ],
+      "imports": [
+        {
+          "source": "shutil",
+          "specifiers": [
+            "shutil"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "unicodedata",
+          "specifiers": [
+            "unicodedata"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        }
+      ],
+      "exports": [
+        "_color_enabled",
+        "SubtitleDisplay"
+      ],
+      "totalLines": 218,
+      "hasStructuralAnalysis": true
+    },
+    "src/evidence_log.py": {
+      "filePath": "src/evidence_log.py",
+      "contentHash": "6e3634d1ab70507cce0a5ce3e5581c92583999266cfc81c28d65912db5855f83",
+      "functions": [
+        {
+          "name": "configure",
+          "params": [
+            "path"
+          ],
+          "returnType": "Optional[Path]",
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "is_enabled",
+          "params": [],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "log",
+          "params": [
+            "event"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "close",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 10
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Any",
+            "Optional"
+          ]
+        }
+      ],
+      "exports": [
+        "configure",
+        "is_enabled",
+        "log",
+        "close"
+      ],
+      "totalLines": 101,
+      "hasStructuralAnalysis": true
+    },
+    "src/local_agreement.py": {
+      "filePath": "src/local_agreement.py",
+      "contentHash": "002ec6a0d721f15b9f55d0e932fd48e78c2c74d6126412f827b316e1b984ee7f",
+      "functions": [
+        {
+          "name": "longest_common_prefix",
+          "params": [
+            "a",
+            "b"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "_common_prefix_all",
+          "params": [
+            "values"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 11
+        }
+      ],
+      "classes": [
+        {
+          "name": "LocalAgreementBuffer",
+          "methods": [
+            "__init__",
+            "reset",
+            "update"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 50
+        }
+      ],
+      "imports": [
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Deque",
+            "Iterable",
+            "Tuple"
+          ]
+        }
+      ],
+      "exports": [
+        "longest_common_prefix",
+        "_common_prefix_all",
+        "LocalAgreementBuffer"
+      ],
+      "totalLines": 80,
+      "hasStructuralAnalysis": true
+    },
+    "src/pipeline.py": {
+      "filePath": "src/pipeline.py",
+      "contentHash": "71fa3f552e7a3e34a71024b58c3ceb2bf94f76548df8a8d5cb19193dc9e847f5",
+      "functions": [],
+      "classes": [
+        {
+          "name": "TranslationPipeline",
+          "methods": [
+            "__init__",
+            "_cloud_translator_class",
+            "_cloud_worker",
+            "_on_cloud_fatal",
+            "_asr_worker",
+            "_streaming_asr_worker",
+            "_segment_queue_put_sentinel",
+            "_put_segment",
+            "_redecode_worker",
+            "_flush_streaming_aggregator_if_due",
+            "_transcribe_and_enqueue",
+            "_next_seq",
+            "_enqueue_text",
+            "_translate_worker",
+            "_translate_and_display_batch",
+            "_translate_batch_flattened",
+            "_drain_text_queue",
+            "start",
+            "run_forever",
+            "stop"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 576
+        }
+      ],
+      "imports": [
+        {
+          "source": "queue",
+          "specifiers": [
+            "queue"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "monotonic"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src",
+          "specifiers": [
+            "ev"
+          ]
+        },
+        {
+          "source": "src.asr",
+          "specifiers": [
+            "JapaneseASR"
+          ]
+        },
+        {
+          "source": "src.audio_capture",
+          "specifiers": [
+            "AudioCapture"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        },
+        {
+          "source": "src.local_agreement",
+          "specifiers": [
+            "LocalAgreementBuffer"
+          ]
+        },
+        {
+          "source": "src.sentence_aggregator",
+          "specifiers": [
+            "SentenceAggregator",
+            "split_japanese_sentences"
+          ]
+        },
+        {
+          "source": "src.translator",
+          "specifiers": [
+            "NllbTranslator",
+            "join_translations"
+          ]
+        },
+        {
+          "source": "src.vad",
+          "specifiers": [
+            "VadSegmenter"
+          ]
+        }
+      ],
+      "exports": [
+        "TranslationPipeline"
+      ],
+      "totalLines": 610,
+      "hasStructuralAnalysis": true
+    },
+    "src/sentence_aggregator.py": {
+      "filePath": "src/sentence_aggregator.py",
+      "contentHash": "e6c5e6eb8c1c8ab2cd474d27d6067a3dfa1369f8d38e6d941c1016083b445690",
+      "functions": [
+        {
+          "name": "split_japanese_sentences",
+          "params": [
+            "text"
+          ],
+          "returnType": "list[str]",
+          "exported": true,
+          "lineCount": 22
+        }
+      ],
+      "classes": [
+        {
+          "name": "SentenceAggregator",
+          "methods": [
+            "__init__",
+            "add",
+            "flush",
+            "pending",
+            "reset",
+            "is_dangling",
+            "_extract",
+            "_find_next_boundary",
+            "_boundary_after_base"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 232
+        }
+      ],
+      "imports": [],
+      "exports": [
+        "split_japanese_sentences",
+        "SentenceAggregator"
+      ],
+      "totalLines": 277,
+      "hasStructuralAnalysis": true
+    },
+    "src/streaming_asr.py": {
+      "filePath": "src/streaming_asr.py",
+      "contentHash": "fc8262b3438f8a51b0bc3868fda574290117d669669ec13b831da27682b04503",
+      "functions": [],
+      "classes": [
+        {
+          "name": "StreamingJapaneseASR",
+          "methods": [
+            "__init__",
+            "accept",
+            "partial",
+            "at_endpoint",
+            "reset",
+            "finalize_tail",
+            "_append_overlap",
+            "_overlap_window_samples",
+            "_find_model_files",
+            "_find_onnx",
+            "_find_tokens"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 113
+        }
+      ],
+      "imports": [
+        {
+          "source": "glob",
+          "specifiers": [
+            "glob"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "sherpa_onnx",
+          "specifiers": [
+            "sherpa_onnx"
+          ]
+        }
+      ],
+      "exports": [
+        "StreamingJapaneseASR"
+      ],
+      "totalLines": 150,
+      "hasStructuralAnalysis": true
+    },
+    "src/transcript_export.py": {
+      "filePath": "src/transcript_export.py",
+      "contentHash": "2b4eea15c855103f79ac544d42f142197c7101e214a3d27ccb380da1aec7c0ca",
+      "functions": [
+        {
+          "name": "load_events",
+          "params": [
+            "path"
+          ],
+          "returnType": "list[dict[str, Any]]",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "build_lines",
+          "params": [
+            "events"
+          ],
+          "returnType": "list[TranscriptLine]",
+          "exported": true,
+          "lineCount": 31
+        },
+        {
+          "name": "summarize",
+          "params": [
+            "events"
+          ],
+          "returnType": "dict[str, Any]",
+          "exported": true,
+          "lineCount": 42
+        },
+        {
+          "name": "_fmt_srt_ts",
+          "params": [
+            "ms"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "to_srt",
+          "params": [
+            "lines",
+            "bilingual"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "to_text",
+          "params": [
+            "lines"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "to_markdown",
+          "params": [
+            "lines"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "to_json",
+          "params": [
+            "lines"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "render",
+          "params": [
+            "lines",
+            "fmt"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "export_file",
+          "params": [
+            "log_path",
+            "fmt",
+            "out_path"
+          ],
+          "returnType": "str",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "_main",
+          "params": [
+            "argv"
+          ],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 31
+        }
+      ],
+      "classes": [
+        {
+          "name": "TranscriptLine",
+          "methods": [],
+          "properties": [
+            "seq",
+            "jp",
+            "vi",
+            "start_ms",
+            "end_ms",
+            "ts"
+          ],
+          "exported": true,
+          "lineCount": 9
+        }
+      ],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "dataclasses",
+          "specifiers": [
+            "dataclass"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Any",
+            "Iterable",
+            "Optional"
+          ]
+        }
+      ],
+      "exports": [
+        "TranscriptLine",
+        "load_events",
+        "build_lines",
+        "summarize",
+        "_fmt_srt_ts",
+        "to_srt",
+        "to_text",
+        "to_markdown",
+        "to_json",
+        "render",
+        "export_file",
+        "_main"
+      ],
+      "totalLines": 267,
+      "hasStructuralAnalysis": true
+    },
+    "src/translator.py": {
+      "filePath": "src/translator.py",
+      "contentHash": "c633ef5d0e776fa4851452f87e443a7f018e5b132e02eb45385fc91ea91993cc",
+      "functions": [
+        {
+          "name": "join_translations",
+          "params": [
+            "sources",
+            "translations"
+          ],
+          "exported": true,
+          "lineCount": 20
+        }
+      ],
+      "classes": [
+        {
+          "name": "NllbTranslator",
+          "methods": [
+            "__init__",
+            "translate",
+            "translate_many",
+            "_translate_one",
+            "_decode",
+            "warmup",
+            "_apply_glossary"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 130
+        }
+      ],
+      "imports": [
+        {
+          "source": "logging",
+          "specifiers": [
+            "logging"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "pathlib"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Optional"
+          ]
+        },
+        {
+          "source": "ctranslate2",
+          "specifiers": [
+            "ctranslate2"
+          ]
+        },
+        {
+          "source": "transformers",
+          "specifiers": [
+            "AutoTokenizer"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.sentence_aggregator",
+          "specifiers": [
+            "split_japanese_sentences"
+          ]
+        }
+      ],
+      "exports": [
+        "join_translations",
+        "NllbTranslator"
+      ],
+      "totalLines": 182,
+      "hasStructuralAnalysis": true
+    },
+    "src/vad.py": {
+      "filePath": "src/vad.py",
+      "contentHash": "f121b23bf6f7151de2171270c6b1fd1b9207d0c4ca540b555c7f6254a8c7b541",
+      "functions": [],
+      "classes": [
+        {
+          "name": "VadSegmenter",
+          "methods": [
+            "__init__",
+            "float32_to_pcm16_frames",
+            "push",
+            "flush",
+            "_effective_voiced",
+            "_start_or_append",
+            "_finish_current",
+            "_min_cut",
+            "_reseed_carry",
+            "_frame_rms",
+            "_reset_utterance"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 240
+        }
+      ],
+      "imports": [
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "typing",
+          "specifiers": [
+            "Optional"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        }
+      ],
+      "exports": [
+        "VadSegmenter"
+      ],
+      "totalLines": 281,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_cloud_translator.py": {
+      "filePath": "tests/test_cloud_translator.py",
+      "contentHash": "173fcd7a216b232ab9a6bc995d6dfb3530362a7ed8f2c81f7e44e1bb42d99499",
+      "functions": [
+        {
+          "name": "_new_translator",
+          "params": [
+            "display"
+          ],
+          "returnType": "AzureSpeechTranslator",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_pcm_conversion",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_partial_dedup",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_final_shows_source_and_target",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "test_final_without_translation_uses_placeholder",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "test_empty_final_ignored",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_missing_credentials_raises",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_canceled_triggers_on_fatal",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_callbacks_suppressed_after_stopping",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 11
+        }
+      ],
+      "classes": [
+        {
+          "name": "RecordingDisplay",
+          "methods": [
+            "__init__",
+            "show_source_partial",
+            "finalize_source",
+            "show_target"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "FakeResult",
+          "methods": [
+            "__init__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "FakeEvt",
+          "methods": [
+            "__init__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "FakeCancelEvt",
+          "methods": [
+            "__init__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 4
+        }
+      ],
+      "imports": [
+        {
+          "source": "struct",
+          "specifiers": [
+            "struct"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.cloud_translator",
+          "specifiers": [
+            "AzureSpeechTranslator",
+            "float32_to_pcm16"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        }
+      ],
+      "exports": [
+        "RecordingDisplay",
+        "FakeResult",
+        "FakeEvt",
+        "_new_translator",
+        "test_pcm_conversion",
+        "test_partial_dedup",
+        "test_final_shows_source_and_target",
+        "test_final_without_translation_uses_placeholder",
+        "test_empty_final_ignored",
+        "test_missing_credentials_raises",
+        "FakeCancelEvt",
+        "test_canceled_triggers_on_fatal",
+        "test_callbacks_suppressed_after_stopping",
+        "main"
+      ],
+      "totalLines": 176,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_components.py": {
+      "filePath": "tests/test_components.py",
+      "contentHash": "b2402ef74b5a086eea52a32089da06c955c7f72fad69a92b46801279c74ee203",
+      "functions": [
+        {
+          "name": "load_wav_float32",
+          "params": [
+            "path"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 53
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "wave",
+          "specifiers": [
+            "wave"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.asr",
+          "specifiers": [
+            "JapaneseASR"
+          ]
+        },
+        {
+          "source": "src.translator",
+          "specifiers": [
+            "NllbTranslator"
+          ]
+        },
+        {
+          "source": "src.vad",
+          "specifiers": [
+            "VadSegmenter"
+          ]
+        }
+      ],
+      "exports": [
+        "load_wav_float32",
+        "main"
+      ],
+      "totalLines": 93,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_dedup.py": {
+      "filePath": "tests/test_dedup.py",
+      "contentHash": "814ba07e6597c36bd6da8bb640a3055fa4d9db67fe96889a145d533a50d49638",
+      "functions": [
+        {
+          "name": "make_pipeline_stub",
+          "params": [],
+          "returnType": "TranslationPipeline",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "queue_items",
+          "params": [
+            "inst"
+          ],
+          "returnType": "list[tuple[str, bool]]",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "test_duplicate_long_streaming_sentence_is_suppressed",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_short_streaming_sentence_is_not_suppressed",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_pre_shown_path_is_not_deduped",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_different_streaming_sentences_are_not_suppressed",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_duplicate_outside_window_is_not_suppressed",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "queue",
+          "specifiers": [
+            "queue"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.pipeline",
+          "specifiers": [
+            "TranslationPipeline"
+          ]
+        }
+      ],
+      "exports": [
+        "make_pipeline_stub",
+        "queue_items",
+        "test_duplicate_long_streaming_sentence_is_suppressed",
+        "test_short_streaming_sentence_is_not_suppressed",
+        "test_pre_shown_path_is_not_deduped",
+        "test_different_streaming_sentences_are_not_suppressed",
+        "test_duplicate_outside_window_is_not_suppressed",
+        "main"
+      ],
+      "totalLines": 100,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_display_streaming.py": {
+      "filePath": "tests/test_display_streaming.py",
+      "contentHash": "d139af10ad1f30bd9a12542b04c7875f25ed36127f499e5f7979a972a75cce51",
+      "functions": [
+        {
+          "name": "_display",
+          "params": [
+            "isatty"
+          ],
+          "returnType": "SubtitleDisplay",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "test_truncation_never_exceeds_terminal_width",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "test_truncation_keeps_newest_tail",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "test_partial_stays_on_one_physical_line",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "test_target_clears_pending_partial",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_finalize_clears_pending_partial",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_non_tty_skips_partials",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "test_show_pair_prints_jp_then_vi_contiguously",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "test_show_pair_clears_pending_partial",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "test_show_pair_without_color_has_no_ansi_codes",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "io",
+          "specifiers": [
+            "io"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "contextlib",
+          "specifiers": [
+            "redirect_stdout"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        }
+      ],
+      "exports": [
+        "_display",
+        "test_truncation_never_exceeds_terminal_width",
+        "test_truncation_keeps_newest_tail",
+        "test_partial_stays_on_one_physical_line",
+        "test_target_clears_pending_partial",
+        "test_finalize_clears_pending_partial",
+        "test_non_tty_skips_partials",
+        "test_show_pair_prints_jp_then_vi_contiguously",
+        "test_show_pair_clears_pending_partial",
+        "test_show_pair_without_color_has_no_ansi_codes",
+        "main"
+      ],
+      "totalLines": 146,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_evidence_log.py": {
+      "filePath": "tests/test_evidence_log.py",
+      "contentHash": "598048929dfefecc953c20f9f7564b6ef047070b0ad91c979e236259543a69b9",
+      "functions": [],
+      "classes": [
+        {
+          "name": "EvidenceLogTest",
+          "methods": [
+            "tearDown",
+            "test_disabled_by_default_is_noop",
+            "test_writes_jsonl_records",
+            "test_configure_none_disables"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 34
+        }
+      ],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "tempfile",
+          "specifiers": [
+            "tempfile"
+          ]
+        },
+        {
+          "source": "unittest",
+          "specifiers": [
+            "unittest"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "src",
+          "specifiers": [
+            "evidence_log"
+          ]
+        }
+      ],
+      "exports": [
+        "EvidenceLogTest"
+      ],
+      "totalLines": 59,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_glossary.py": {
+      "filePath": "tests/test_glossary.py",
+      "contentHash": "99900725ebd10d95b5836f2244ee5ff2b3d52f35e20465d2f94be22eccc84439",
+      "functions": [
+        {
+          "name": "test_glossary_replaces_known_terms",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_glossary_leaves_other_text_untouched",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "test_glossary_entries_are_configured",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.translator",
+          "specifiers": [
+            "NllbTranslator"
+          ]
+        }
+      ],
+      "exports": [
+        "test_glossary_replaces_known_terms",
+        "test_glossary_leaves_other_text_untouched",
+        "test_glossary_entries_are_configured",
+        "main"
+      ],
+      "totalLines": 47,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_local_agreement.py": {
+      "filePath": "tests/test_local_agreement.py",
+      "contentHash": "a4e0c247a8a3bb317924bd6f4b69c90bd65f0e5f1bce280aaf0536a50787fb27",
+      "functions": [
+        {
+          "name": "test_local_agreement_2_commits_only_repeated_japanese_prefix",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "test_revision_before_commit_does_not_show_stale_characters",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "test_committed_prefix_trims_if_asr_revises_after_commit",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "test_n_greater_than_2_requires_prefix_stable_across_history",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_n_1_commits_entire_hypothesis",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "test_reset_clears_state",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "src.local_agreement",
+          "specifiers": [
+            "LocalAgreementBuffer"
+          ]
+        }
+      ],
+      "exports": [
+        "test_local_agreement_2_commits_only_repeated_japanese_prefix",
+        "test_revision_before_commit_does_not_show_stale_characters",
+        "test_committed_prefix_trims_if_asr_revises_after_commit",
+        "test_n_greater_than_2_requires_prefix_stable_across_history",
+        "test_n_1_commits_entire_hypothesis",
+        "test_reset_clears_state",
+        "main"
+      ],
+      "totalLines": 88,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_pipeline_robustness.py": {
+      "filePath": "tests/test_pipeline_robustness.py",
+      "contentHash": "fea40c3a0202283738b0b17027999781c303754ac297cf3e1a9e4b10fd6da567",
+      "functions": [
+        {
+          "name": "make_stub",
+          "params": [
+            "translator",
+            "display",
+            "maxsize"
+          ],
+          "returnType": "TranslationPipeline",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_attribution_across_differing_sentence_counts",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "test_count_mismatch_pads_and_never_truncates",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_display_failure_does_not_drop_other_items",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "test_drain_flushes_all_queued_items_across_batches",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "test_backpressure_blocks_then_abandons_without_dropping_silently",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 16
+        }
+      ],
+      "classes": [
+        {
+          "name": "StubTranslator",
+          "methods": [
+            "__init__",
+            "translate",
+            "translate_many"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "ShortTranslator",
+          "methods": [
+            "translate_many"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "RecordingDisplay",
+          "methods": [
+            "__init__",
+            "show_pair",
+            "show_target",
+            "info"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "FailingDisplay",
+          "methods": [
+            "__init__",
+            "show_pair"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 11
+        }
+      ],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "queue",
+          "specifiers": [
+            "queue"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.pipeline",
+          "specifiers": [
+            "TranslationPipeline"
+          ]
+        }
+      ],
+      "exports": [
+        "StubTranslator",
+        "ShortTranslator",
+        "RecordingDisplay",
+        "FailingDisplay",
+        "make_stub",
+        "test_attribution_across_differing_sentence_counts",
+        "test_count_mismatch_pads_and_never_truncates",
+        "test_display_failure_does_not_drop_other_items",
+        "test_drain_flushes_all_queued_items_across_batches",
+        "test_backpressure_blocks_then_abandons_without_dropping_silently",
+        "main"
+      ],
+      "totalLines": 199,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_pipeline_stream.py": {
+      "filePath": "tests/test_pipeline_stream.py",
+      "contentHash": "91f7c7b5231f37da41e978876d6e370cf5b91afe1a7447f9ab2503360a7ba715",
+      "functions": [
+        {
+          "name": "load_wav_float32",
+          "params": [
+            "path"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "build_stream",
+          "params": [],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 41
+        }
+      ],
+      "classes": [
+        {
+          "name": "RecordingDisplay",
+          "methods": [
+            "__init__",
+            "show",
+            "show_pair",
+            "show_source",
+            "show_target"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "FakeCapture",
+          "methods": [
+            "__init__",
+            "run"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 25
+        }
+      ],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "collections"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "wave",
+          "specifiers": [
+            "wave"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        },
+        {
+          "source": "src.pipeline",
+          "specifiers": [
+            "TranslationPipeline"
+          ]
+        }
+      ],
+      "exports": [
+        "load_wav_float32",
+        "RecordingDisplay",
+        "FakeCapture",
+        "build_stream",
+        "main"
+      ],
+      "totalLines": 154,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_redecode_pipeline.py": {
+      "filePath": "tests/test_redecode_pipeline.py",
+      "contentHash": "d468329c6eb7c45620323d1d1bb2fed5aa411f22f0d8dde4c449eb294a74d8d3",
+      "functions": [
+        {
+          "name": "load_wav_float32",
+          "params": [
+            "path"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "build_stream",
+          "params": [],
+          "returnType": "tuple[np.ndarray, int]",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 68
+        }
+      ],
+      "classes": [
+        {
+          "name": "StubTranslator",
+          "methods": [
+            "translate",
+            "translate_many",
+            "warmup"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "RecordingDisplay",
+          "methods": [
+            "__init__",
+            "info",
+            "show_source",
+            "show_source_partial",
+            "finalize_source",
+            "show_target",
+            "show_pair"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 25
+        },
+        {
+          "name": "FakeCapture",
+          "methods": [
+            "__init__",
+            "run"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 21
+        }
+      ],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "wave",
+          "specifiers": [
+            "wave"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.pipeline",
+          "specifiers": [
+            "pipeline_mod"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        }
+      ],
+      "exports": [
+        "load_wav_float32",
+        "StubTranslator",
+        "RecordingDisplay",
+        "FakeCapture",
+        "build_stream",
+        "main"
+      ],
+      "totalLines": 188,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_sentence_aggregator.py": {
+      "filePath": "tests/test_sentence_aggregator.py",
+      "contentHash": "e33b1a89db018bdde077c43e3aa37a7e2beac0aab51fa9bf49ef5d1eab43d8a5",
+      "functions": [
+        {
+          "name": "test_mid_word_split_healed_by_merge",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_run_on_re_split_at_meeting_terminals",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_no_terminal_stays_buffered_until_flush",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_pending_reflects_buffer_and_reset_clears_it",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "test_clean_complete_sentence_passes_through_unchanged",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "test_multiple_sentences_in_one_add_are_all_returned",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "test_terminal_followed_by_connective_forms_boundary",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "test_multi_speaker_run_on_splits_without_clause_starter",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "test_continuation_particles_never_split",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "test_dangling_fragment_detection",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "test_polite_ne_not_orphaned_in_unpunctuated_runon",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "test_sentence_final_yo_does_not_corrupt_following_word",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "src.sentence_aggregator",
+          "specifiers": [
+            "SentenceAggregator"
+          ]
+        }
+      ],
+      "exports": [
+        "test_mid_word_split_healed_by_merge",
+        "test_run_on_re_split_at_meeting_terminals",
+        "test_no_terminal_stays_buffered_until_flush",
+        "test_pending_reflects_buffer_and_reset_clears_it",
+        "test_clean_complete_sentence_passes_through_unchanged",
+        "test_multiple_sentences_in_one_add_are_all_returned",
+        "test_terminal_followed_by_connective_forms_boundary",
+        "test_multi_speaker_run_on_splits_without_clause_starter",
+        "test_continuation_particles_never_split",
+        "test_dangling_fragment_detection",
+        "test_polite_ne_not_orphaned_in_unpunctuated_runon",
+        "test_sentence_final_yo_does_not_corrupt_following_word",
+        "main"
+      ],
+      "totalLines": 144,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_streaming_pipeline.py": {
+      "filePath": "tests/test_streaming_pipeline.py",
+      "contentHash": "8c06ab91a10acd7b1617695982e56142832e6a920b8b8c81fa2ba4fa69da8af6",
+      "functions": [
+        {
+          "name": "load_wav_float32",
+          "params": [
+            "path"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "build_stream",
+          "params": [],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "has_japanese",
+          "params": [
+            "text"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 51
+        }
+      ],
+      "classes": [
+        {
+          "name": "StubTranslator",
+          "methods": [
+            "translate",
+            "translate_many",
+            "warmup"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "RecordingDisplay",
+          "methods": [
+            "__init__",
+            "info",
+            "show_source_partial",
+            "finalize_source",
+            "show_target",
+            "show_pair",
+            "show"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "FakeCapture",
+          "methods": [
+            "__init__",
+            "run"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 19
+        }
+      ],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "wave",
+          "specifiers": [
+            "wave"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.pipeline",
+          "specifiers": [
+            "pipeline_mod"
+          ]
+        },
+        {
+          "source": "src.display",
+          "specifiers": [
+            "SubtitleDisplay"
+          ]
+        }
+      ],
+      "exports": [
+        "load_wav_float32",
+        "StubTranslator",
+        "RecordingDisplay",
+        "FakeCapture",
+        "build_stream",
+        "has_japanese",
+        "main"
+      ],
+      "totalLines": 172,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_transcript_export.py": {
+      "filePath": "tests/test_transcript_export.py",
+      "contentHash": "90e9b07c7a1b8deb5cc7d19346247ef0e316d11edcb69d3281d38f38c3af7b90",
+      "functions": [
+        {
+          "name": "_sample_events",
+          "params": [],
+          "returnType": "list[dict]",
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "test_build_lines_pairs_and_timing",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_srt_format",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_partial_log_zips_to_shorter",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_summarize_counts_reasons_and_loss",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "test_text_and_json_render",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "src",
+          "specifiers": [
+            "te"
+          ]
+        }
+      ],
+      "exports": [
+        "_sample_events",
+        "test_build_lines_pairs_and_timing",
+        "test_srt_format",
+        "test_partial_log_zips_to_shorter",
+        "test_summarize_counts_reasons_and_loss",
+        "test_text_and_json_render",
+        "main"
+      ],
+      "totalLines": 85,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_translator_decoding.py": {
+      "filePath": "tests/test_translator_decoding.py",
+      "contentHash": "c37ce15bbd8d6aea9396841c6ba6c3882a8ec50c20b0eb7b0db215aef84f976c",
+      "functions": [
+        {
+          "name": "has_immediately_repeated_bigram",
+          "params": [
+            "text"
+          ],
+          "returnType": "bool",
+          "exported": true,
+          "lineCount": 3
+        }
+      ],
+      "classes": [
+        {
+          "name": "TranslatorDecodingTest",
+          "methods": [
+            "setUpClass",
+            "test_japanese_translates_to_non_empty_vietnamese",
+            "test_repetition_prone_input_has_no_degenerate_bigram_loop"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 15
+        }
+      ],
+      "imports": [
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "unittest",
+          "specifiers": [
+            "unittest"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.translator",
+          "specifiers": [
+            "NllbTranslator"
+          ]
+        }
+      ],
+      "exports": [
+        "has_immediately_repeated_bigram",
+        "TranslatorDecodingTest"
+      ],
+      "totalLines": 48,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_translator_sentence_split.py": {
+      "filePath": "tests/test_translator_sentence_split.py",
+      "contentHash": "a594db0792d3ae6a863151ab7d484be42c01b87ba7444433203b395476107210",
+      "functions": [],
+      "classes": [
+        {
+          "name": "SentenceSplitTest",
+          "methods": [
+            "test_punctuated_multi_sentence_splits",
+            "test_terminal_run_on_splits",
+            "test_greeting_run_on_splits",
+            "test_greeting_with_continuation_not_split",
+            "test_final_particle_does_not_split_mid_word",
+            "test_final_particle_kept_when_truly_final",
+            "test_terminal_followed_by_connective_splits",
+            "test_greeting_followed_by_starter_splits",
+            "test_single_sentence_returns_itself",
+            "test_empty_returns_empty_list"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 75
+        },
+        {
+          "name": "SentenceAwareTranslationTest",
+          "methods": [
+            "setUpClass",
+            "test_no_trailing_sentence_dropped",
+            "test_translate_many_aligns_outputs",
+            "test_single_sentence_unchanged"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 24
+        }
+      ],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "unittest",
+          "specifiers": [
+            "unittest"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src.sentence_aggregator",
+          "specifiers": [
+            "split_japanese_sentences"
+          ]
+        }
+      ],
+      "exports": [
+        "SentenceSplitTest",
+        "SentenceAwareTranslationTest"
+      ],
+      "totalLines": 131,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_vad_mincut.py": {
+      "filePath": "tests/test_vad_mincut.py",
+      "contentHash": "99f4228640fcf42b0ad2be0d6496c17618a5335cf84f29529eb76c3863ea793f",
+      "functions": [
+        {
+          "name": "_frames",
+          "params": [
+            "values"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "_make_segmenter",
+          "params": [
+            "flags",
+            "**overrides"
+          ],
+          "returnType": "\"vad_mod.VadSegmenter\"",
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "test_mincut_splits_at_internal_silence_and_carries_tail",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "test_mincut_fallback_rms_emits_and_carries",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_energy_gate_default_off_keeps_webrtc_voiced_run_open",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "test_energy_gate_on_can_endpoint_low_rms_webrtc_voiced_tail",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 15
+        }
+      ],
+      "classes": [
+        {
+          "name": "_ScriptedVad",
+          "methods": [
+            "__init__",
+            "is_speech"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "_FakeWebrtcVad",
+          "methods": [],
+          "properties": [],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "_ConfigPatch",
+          "methods": [
+            "__init__",
+            "__enter__",
+            "__exit__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 14
+        }
+      ],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src",
+          "specifiers": [
+            "vad_mod"
+          ]
+        }
+      ],
+      "exports": [
+        "_ScriptedVad",
+        "_FakeWebrtcVad",
+        "_frames",
+        "_ConfigPatch",
+        "_make_segmenter",
+        "test_mincut_splits_at_internal_silence_and_carries_tail",
+        "test_mincut_fallback_rms_emits_and_carries",
+        "test_energy_gate_default_off_keeps_webrtc_voiced_run_open",
+        "test_energy_gate_on_can_endpoint_low_rms_webrtc_voiced_tail",
+        "main"
+      ],
+      "totalLines": 169,
+      "hasStructuralAnalysis": true
+    },
+    "tests/test_vad_preroll.py": {
+      "filePath": "tests/test_vad_preroll.py",
+      "contentHash": "3c48d2d7985100447bb3ab0c9d370e805c7888a41b4317d9d7e88cbfee93d109",
+      "functions": [
+        {
+          "name": "_make_segmenter",
+          "params": [
+            "preroll_ms"
+          ],
+          "returnType": "\"vad_mod.VadSegmenter\"",
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "test_preroll_prepends_pre_onset_audio",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 38
+        },
+        {
+          "name": "test_no_collar_when_preroll_zero",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "int",
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [
+        {
+          "name": "_ScriptedVad",
+          "methods": [
+            "__init__",
+            "is_speech"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 9
+        }
+      ],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "config",
+          "specifiers": [
+            "config"
+          ]
+        },
+        {
+          "source": "src",
+          "specifiers": [
+            "vad_mod"
+          ]
+        }
+      ],
+      "exports": [
+        "_ScriptedVad",
+        "_make_segmenter",
+        "test_preroll_prepends_pre_onset_audio",
+        "test_no_collar_when_preroll_zero",
+        "main"
+      ],
+      "totalLines": 124,
+      "hasStructuralAnalysis": true
+    },
+    "webui/streamlit_app.py": {
+      "filePath": "webui/streamlit_app.py",
+      "contentHash": "f8412b4b0e9f03e3d5de8a51a92ce127f172a1a8476771e696547fffd1e33b39",
+      "functions": [
+        {
+          "name": "_discover_logs",
+          "params": [],
+          "returnType": "list[Path]",
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_sidebar",
+          "params": [],
+          "returnType": "tuple[Path | None, int, int, bool]",
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "_render_metrics",
+          "params": [
+            "stats"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "_render_feed",
+          "params": [
+            "lines",
+            "tail"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "_render_downloads",
+          "params": [
+            "events",
+            "lines"
+          ],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "main",
+          "params": [],
+          "returnType": "None",
+          "exported": true,
+          "lineCount": 29
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "pathlib",
+          "specifiers": [
+            "Path"
+          ]
+        },
+        {
+          "source": "streamlit",
+          "specifiers": [
+            "st"
+          ]
+        },
+        {
+          "source": "src.transcript_export",
+          "specifiers": [
+            "build_lines",
+            "load_events",
+            "render",
+            "summarize"
+          ]
+        }
+      ],
+      "exports": [
+        "_discover_logs",
+        "_sidebar",
+        "_render_metrics",
+        "_render_feed",
+        "_render_downloads",
+        "main"
+      ],
+      "totalLines": 169,
+      "hasStructuralAnalysis": true
+    }
+  }
+}
