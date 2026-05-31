@@ -16,7 +16,13 @@ from pathlib import Path
 import numpy as np
 import sherpa_onnx
 
-import config
+try:
+    import config
+except ModuleNotFoundError:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import config
 
 
 class StreamingJapaneseASR:
@@ -43,6 +49,7 @@ class StreamingJapaneseASR:
             rule3_min_utterance_length=config.STREAMING_RULE3_UTTERANCE,
         )
         self.stream = self.recognizer.create_stream()
+        self._overlap = np.zeros(0, dtype=np.float32)
 
     def accept(self, samples: np.ndarray) -> None:
         """Feed a block of 16 kHz mono float32 audio and decode what is ready."""
@@ -50,6 +57,7 @@ class StreamingJapaneseASR:
         if audio.size == 0:
             return
         self.stream.accept_waveform(self.SAMPLE_RATE, audio)
+        self._append_overlap(audio)
         while self.recognizer.is_ready(self.stream):
             self.recognizer.decode_stream(self.stream)
 
@@ -64,6 +72,18 @@ class StreamingJapaneseASR:
     def reset(self) -> None:
         """Start a fresh utterance after the previous one was finalized."""
         self.recognizer.reset(self.stream)
+        if self._overlap_window_samples() <= 0:
+            self._overlap = np.zeros(0, dtype=np.float32)
+            return
+
+        overlap = self._overlap.copy()
+        self._overlap = np.zeros(0, dtype=np.float32)
+        if overlap.size == 0:
+            return
+
+        self.stream.accept_waveform(self.SAMPLE_RATE, overlap)
+        while self.recognizer.is_ready(self.stream):
+            self.recognizer.decode_stream(self.stream)
 
     def finalize_tail(self) -> None:
         """Flush trailing audio so the last partial reflects all fed samples."""
@@ -72,6 +92,19 @@ class StreamingJapaneseASR:
         self.stream.input_finished()
         while self.recognizer.is_ready(self.stream):
             self.recognizer.decode_stream(self.stream)
+
+    def _append_overlap(self, audio: np.ndarray) -> None:
+        max_samples = self._overlap_window_samples()
+        if max_samples <= 0:
+            self._overlap = np.zeros(0, dtype=np.float32)
+            return
+        if audio.size >= max_samples:
+            self._overlap = audio[-max_samples:].copy()
+            return
+        self._overlap = np.concatenate((self._overlap, audio))[-max_samples:]
+
+    def _overlap_window_samples(self) -> int:
+        return int(max(0.0, config.STREAMING_AUDIO_OVERLAP_SEC) * self.SAMPLE_RATE)
 
     @classmethod
     def _find_model_files(cls, model_dir: Path) -> dict[str, Path]:

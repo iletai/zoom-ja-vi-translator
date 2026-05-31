@@ -53,6 +53,8 @@ class TranslationPipeline:
         self.streaming_asr = None
         self.aggregator = None
         self._last_stream_text_at = monotonic()
+        self._last_enqueued_text = ""
+        self._last_enqueued_at = 0.0
         self.translator = None
         self.cloud_translator = None
 
@@ -203,6 +205,18 @@ class TranslationPipeline:
         self._enqueue_text(japanese, pre_shown=True)
 
     def _enqueue_text(self, japanese: str, pre_shown: bool) -> None:
+        if not pre_shown:
+            stripped = japanese.strip()
+            now = monotonic()
+            if (
+                stripped == self._last_enqueued_text
+                and len(stripped) >= config.STREAM_DEDUP_MIN_CHARS
+                and now - self._last_enqueued_at <= config.STREAM_DEDUP_WINDOW_SEC
+            ):
+                return
+            self._last_enqueued_text = stripped
+            self._last_enqueued_at = now
+
         # Lock makes the drop-oldest get+put atomic against the consumer, so a
         # concurrent take cannot cause us to drop an extra (still-fresh) item.
         with self._text_queue_lock:

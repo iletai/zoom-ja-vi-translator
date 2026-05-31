@@ -285,6 +285,25 @@ Edit `config.py`:
 | **Faster but lower JA accuracy** | Swap ASR to faster-whisper `base` (alternative backend) |
 | **Commercial license** | Replace NLLB with `Helsinki-NLP/opus-mt-ja-vi` (Apache 2.0, ~75 MB int8). Convert with `ct2-opus-mt-converter` and adjust `translator.py` (opus-mt is bilingual — no language prefix token) |
 
+### Upgrading translation quality (NLLB-1.3B)
+
+For an opt-in quality upgrade, convert Meta's larger NLLB distilled model to the
+same CTranslate2 int8 format. It improves JA→VI translation quality by about
++4 chrF++, but uses about 2.0-2.5 GB RAM at runtime and roughly 300-700 ms per
+sentence on a 4-core CPU.
+
+```bash
+./scripts/convert_nllb_1p3b.sh
+```
+
+The translator auto-detects `models/nllb-200-distilled-1.3B-ct2-int8/` on next
+launch, so no code or tokenizer change is needed. To revert, remove that
+directory or force the 600M model:
+
+```bash
+export NLLB_CT2_DIR=models/nllb-200-distilled-600M-ct2-int8
+```
+
 ---
 
 ## Project Structure

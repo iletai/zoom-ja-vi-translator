@@ -12,7 +12,18 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODELS_DIR = PROJECT_ROOT / "models"
 ASR_MODEL_DIR = MODELS_DIR / "reazonspeech-k2-v2"
-NLLB_CT2_DIR = MODELS_DIR / "nllb-200-distilled-600M-ct2-int8"
+# Translation model: prefer the higher-quality NLLB-200-distilled-1.3B int8 build
+# when it is present (drop-in upgrade, ~+4 chrF++, same tokenizer/API). Falls back
+# to the 600M build otherwise. Convert the 1.3B model with
+# scripts/convert_nllb_1p3b.sh. Override either path via env if desired.
+_NLLB_CT2_1P3B = MODELS_DIR / "nllb-200-distilled-1.3B-ct2-int8"
+_NLLB_CT2_600M = MODELS_DIR / "nllb-200-distilled-600M-ct2-int8"
+NLLB_CT2_DIR = Path(
+    os.environ.get(
+        "NLLB_CT2_DIR",
+        str(_NLLB_CT2_1P3B if _NLLB_CT2_1P3B.exists() else _NLLB_CT2_600M),
+    )
+)
 
 # ─── HuggingFace Hub offline mode ────────────────────────────────────────
 # Loading the NLLB tokenizer via from_pretrained contacts the HF Hub to check
@@ -66,8 +77,16 @@ STREAMING_ASR_NUM_THREADS = int(os.environ.get("STREAMING_ASR_NUM_THREADS", "4")
 # translator never receives a giant multi-sentence block (which drops words and
 # loses context). Keep it short enough for accurate, low-lag translation.
 STREAMING_RULE1_SILENCE = 2.4    # finalize after this silence even with no decode
-STREAMING_RULE2_SILENCE = 0.7    # finalize after this silence once words decoded
+STREAMING_RULE2_SILENCE = 0.85   # finalize after this silence once words decoded
 STREAMING_RULE3_UTTERANCE = 7.0  # force a segment boundary after this length
+
+# Audio-overlap window (seconds). Streaming endpoint resets start the next segment
+# from acoustic silence, so the recognizer loses context and drops sentence heads
+# (e.g. 「部長三日の…」 becomes 「がどうしたんですか」). On reset we re-prime the new
+# stream with this much trailing audio from the previous segment so the acoustic
+# model keeps context across the boundary. 0 disables the overlap. ~0.6s is the
+# sweet spot: enough to recover the head without re-decoding a whole prior clause.
+STREAMING_AUDIO_OVERLAP_SEC = 0.6
 
 # LocalAgreement-2 commit policy for the live partial. A character/word is only
 # "committed" (shown solid, never rewritten) once it has appeared unchanged in
@@ -86,6 +105,15 @@ STREAMING_LOCAL_AGREEMENT_N = 2
 # Force-flush guards keep latency bounded when no clean boundary ever appears.
 STREAM_SENTENCE_MAX_CHARS = 60       # flush a pending buffer once it grows past this
 STREAM_SENTENCE_MAX_WAIT_SEC = 1.5   # flush a pending buffer after this idle time
+
+# Consecutive-duplicate suppression. Streaming endpoints frequently re-emit the
+# exact same finalized sentence (the recognizer replays a buffered utterance after
+# a reset), producing duplicated JP/VI lines in the output. Skip translating &
+# displaying a sentence that is identical to the immediately-previous one when it
+# is at least this many characters long and arrives within this time window. Short
+# back-channel words (はい/ええ) are exempt so legitimate repeats still show.
+STREAM_DEDUP_MIN_CHARS = 6
+STREAM_DEDUP_WINDOW_SEC = 30.0
 
 # ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
