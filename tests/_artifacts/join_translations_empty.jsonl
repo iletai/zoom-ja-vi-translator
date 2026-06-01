@@ -1,6 +1,6 @@
-{"ts": "12:11:49", "t_ms": 407.0, "thread": "MainThread", "event": "session_start", "pid": 1144}
-{"ts": "12:11:49", "t_ms": 407.0, "thread": "MainThread", "event": "empty_translation", "seq": 1, "sentence_index": 1, "jp": "二つ目です。"}
-{"ts": "12:11:49", "t_ms": 407.0, "thread": "MainThread", "event": "translate", "seq": 1, "jp": "一つ目です。二つ目です。", "vi": "VI(一つ目です。) (...)", "latency_ms": 0.0, "batch": 2}
-{"ts": "12:11:49", "t_ms": 407.0, "thread": "MainThread", "event": "display", "seq": 1, "pre_shown": true, "jp": "一つ目です。二つ目です。", "vi": "VI(一つ目です。) (...)"}
-{"ts": "12:11:49", "t_ms": 407.0, "thread": "MainThread", "event": "translate", "seq": 2, "jp": "三つ目です。", "vi": "VI(三つ目です。)", "latency_ms": 0.0, "batch": 2}
-{"ts": "12:11:49", "t_ms": 407.0, "thread": "MainThread", "event": "display", "seq": 2, "pre_shown": true, "jp": "三つ目です。", "vi": "VI(三つ目です。)"}
+{"ts": "13:30:53", "t_ms": 156.0, "thread": "MainThread", "event": "session_start", "pid": 15732}
+{"ts": "13:30:53", "t_ms": 156.0, "thread": "MainThread", "event": "empty_translation", "seq": 1, "sentence_index": 1, "jp": "二つ目です。"}
+{"ts": "13:30:53", "t_ms": 156.0, "thread": "MainThread", "event": "translate", "seq": 1, "jp": "一つ目です。二つ目です。", "vi": "VI(一つ目です。) (...)", "latency_ms": 0.0, "batch": 2}
+{"ts": "13:30:53", "t_ms": 156.0, "thread": "MainThread", "event": "display", "seq": 1, "pre_shown": true, "jp": "一つ目です。二つ目です。", "vi": "VI(一つ目です。) (...)"}
+{"ts": "13:30:53", "t_ms": 156.0, "thread": "MainThread", "event": "translate", "seq": 2, "jp": "三つ目です。", "vi": "VI(三つ目です。)", "latency_ms": 0.0, "batch": 2}
+{"ts": "13:30:53", "t_ms": 156.0, "thread": "MainThread", "event": "display", "seq": 2, "pre_shown": true, "jp": "三つ目です。", "vi": "VI(三つ目です。)"}

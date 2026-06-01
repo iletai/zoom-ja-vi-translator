@@ -1,33 +1,33 @@
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "MainThread", "event": "session_start", "pid": 1144}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止1です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 1, "text": "通常停止1です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止2です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 1, "jp": "通常停止1です。", "vi": "VI(通常停止1です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 2, "text": "通常停止2です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 1, "pre_shown": true, "jp": "通常停止1です。", "vi": "VI(通常停止1です。)"}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止3です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 2, "jp": "通常停止2です。", "vi": "VI(通常停止2です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 3, "text": "通常停止3です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 2, "pre_shown": true, "jp": "通常停止2です。", "vi": "VI(通常停止2です。)"}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止4です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 3, "jp": "通常停止3です。", "vi": "VI(通常停止3です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 4, "text": "通常停止4です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 3, "pre_shown": true, "jp": "通常停止3です。", "vi": "VI(通常停止3です。)"}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止5です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 4, "jp": "通常停止4です。", "vi": "VI(通常停止4です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 5, "text": "通常停止5です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 4, "pre_shown": true, "jp": "通常停止4です。", "vi": "VI(通常停止4です。)"}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止6です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 5, "jp": "通常停止5です。", "vi": "VI(通常停止5です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 6, "text": "通常停止6です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 5, "pre_shown": true, "jp": "通常停止5です。", "vi": "VI(通常停止5です。)"}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止7です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 6, "jp": "通常停止6です。", "vi": "VI(通常停止6です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 7, "text": "通常停止7です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 6, "pre_shown": true, "jp": "通常停止6です。", "vi": "VI(通常停止6です。)"}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止8です。", "n_chars": 8}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 7, "jp": "通常停止7です。", "vi": "VI(通常停止7です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 8, "text": "通常停止8です。", "pre_shown": true, "queue_size": 0}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 7, "pre_shown": true, "jp": "通常停止7です。", "vi": "VI(通常停止7です。)"}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 8, "jp": "通常停止8です。", "vi": "VI(通常停止8です。)", "latency_ms": 0.0, "batch": 1}
-{"ts": "12:11:50", "t_ms": 860.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 8, "pre_shown": true, "jp": "通常停止8です。", "vi": "VI(通常停止8です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "MainThread", "event": "session_start", "pid": 15732}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止1です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 1, "text": "通常停止1です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止2です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 1, "jp": "通常停止1です。", "vi": "VI(通常停止1です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 2, "text": "通常停止2です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 1, "pre_shown": true, "jp": "通常停止1です。", "vi": "VI(通常停止1です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止3です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 2, "jp": "通常停止2です。", "vi": "VI(通常停止2です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 3, "text": "通常停止3です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 2, "pre_shown": true, "jp": "通常停止2です。", "vi": "VI(通常停止2です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止4です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 3, "jp": "通常停止3です。", "vi": "VI(通常停止3です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 4, "text": "通常停止4です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 3, "pre_shown": true, "jp": "通常停止3です。", "vi": "VI(通常停止3です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止5です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 4, "jp": "通常停止4です。", "vi": "VI(通常停止4です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 5, "text": "通常停止5です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 4, "pre_shown": true, "jp": "通常停止4です。", "vi": "VI(通常停止4です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止6です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 5, "jp": "通常停止5です。", "vi": "VI(通常停止5です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 6, "text": "通常停止6です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 5, "pre_shown": true, "jp": "通常停止5です。", "vi": "VI(通常停止5です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止7です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 6, "jp": "通常停止6です。", "vi": "VI(通常停止6です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 7, "text": "通常停止7です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 6, "pre_shown": true, "jp": "通常停止6です。", "vi": "VI(通常停止6です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "asr_final", "text": "通常停止8です。", "n_chars": 8}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 7, "jp": "通常停止7です。", "vi": "VI(通常停止7です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-3 (_asr_worker)", "event": "enqueue", "seq": 8, "text": "通常停止8です。", "pre_shown": true, "queue_size": 0}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 7, "pre_shown": true, "jp": "通常停止7です。", "vi": "VI(通常停止7です。)"}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "translate", "seq": 8, "jp": "通常停止8です。", "vi": "VI(通常停止8です。)", "latency_ms": 0.0, "batch": 1}
+{"ts": "13:30:54", "t_ms": 593.0, "thread": "Thread-4 (_translate_worker)", "event": "display", "seq": 8, "pre_shown": true, "jp": "通常停止8です。", "vi": "VI(通常停止8です。)"}

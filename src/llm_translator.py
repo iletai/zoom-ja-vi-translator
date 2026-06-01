@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 import threading
+import unicodedata
 from collections import deque
 from typing import Any
 
@@ -121,10 +123,30 @@ class LlmTranslator:
             logger.warning("LLM translation failed for %r: %s", text, exc)
             return ""
 
+    # Hardcoded filler word translations (LLM struggles with these)
+    _FILLER_MAP = {
+        "うん": "Vâng",
+        "うんうん": "Vâng, vâng",
+        "うんうんはい": "Vâng, vâng, đúng rồi",
+        "はい": "Vâng",
+        "はいはい": "Vâng, vâng",
+        "ええ": "Vâng",
+        "なるほど": "Ra vậy",
+        "そうですね": "Đúng vậy nhỉ",
+        "そうそう": "Đúng, đúng",
+    }
+
     def _translate_one(self, text: str, update_context: bool = True) -> str:
         cleaned = text.strip() if text else ""
         if not cleaned:
             return ""
+
+        # Check filler words first (no LLM needed)
+        filler_result = self._FILLER_MAP.get(cleaned)
+        if filler_result:
+            if update_context and self._keep_context:
+                self._history.append((cleaned, filler_result))
+            return filler_result
 
         try:
             with self._lock:
@@ -204,6 +226,9 @@ class LlmTranslator:
         "i can't translate",
     )
 
+    # Regex to detect Japanese characters (Hiragana, Katakana, CJK)
+    _JP_CHARS_RE = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]')
+
     @staticmethod
     def _clean_translation(text: str) -> str:
         cleaned = text.strip()
@@ -214,6 +239,10 @@ class LlmTranslator:
         if "\n" in cleaned:
             cleaned = next((line.strip() for line in cleaned.splitlines() if line.strip()), "")
         cleaned = cleaned.strip("`'\" ")
+        # Reject if output contains Japanese characters (model echoed input)
+        if LlmTranslator._JP_CHARS_RE.search(cleaned):
+            logger.warning("LLM output contains Japanese chars, rejecting: %r", cleaned[:80])
+            return ""
         # Reject refusals/explanations
         lower = cleaned.lower()
         for pattern in LlmTranslator._REFUSAL_PATTERNS:

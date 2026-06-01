@@ -26,11 +26,15 @@ if sys.platform == "win32":
 # Suppress noisy soundcard "data discontinuity" warnings — they fire when the
 # audio capture thread misses a buffer (common during heavy model inference) but
 # are not actionable and clutter the output.
-warnings.filterwarnings("ignore", message="data discontinuity")
+# NOTE: soundcard.mediafoundation calls simplefilter('always', SoundcardRuntimeWarning)
+# on import, so we must apply our filter AFTER importing soundcard.
 
 import config
 from src import audio_capture
 from src.display import SubtitleDisplay
+
+# Apply AFTER soundcard import to override its simplefilter('always')
+warnings.filterwarnings("ignore", message="data discontinuity")
 
 
 def parse_args() -> argparse.Namespace:
