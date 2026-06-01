@@ -10,7 +10,17 @@ Run from the project root:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+
+# Windows console defaults to cp1252 which cannot display Japanese/Vietnamese.
+# Force UTF-8 so print() works for CJK characters.
+if sys.platform == "win32":
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import config
 from src import audio_capture

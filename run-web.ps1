@@ -3,7 +3,7 @@
 # The dashboard only *tails* the JSONL evidence log the translator writes, so it
 # can never add latency or drop data. Start the translator separately with
 # logging, e.g.:
-#   ./run.ps1 -SystemAudio --Log test_audio\evidence\live.jsonl
+#   ./run.ps1 -Log
 # then pick that file in the dashboard sidebar.
 #
 # Usage:
@@ -12,6 +12,11 @@
 
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
+
+# Enable UTF-8 console output for Japanese/Vietnamese characters.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
+chcp 65001 | Out-Null
 
 # Pick a Python 3.9-3.12 interpreter (ML wheels are not built for 3.13+ yet).
 $python = "python"
@@ -25,6 +30,13 @@ if (-not (Test-Path ".venv")) {
 }
 
 & ".venv\Scripts\Activate.ps1"
+
+# Fix SSL certificate issues on Windows.
+$certifi = python -c "import certifi; print(certifi.where())" 2>$null
+if ($certifi) {
+    $env:SSL_CERT_FILE = $certifi
+    $env:REQUESTS_CA_BUNDLE = $certifi
+}
 
 # Install the web dependency once (separate marker from the main ML deps).
 if (-not (Test-Path ".venv\.web_deps_installed")) {
