@@ -26,7 +26,7 @@ if sys.platform == "win32":
 # Suppress noisy soundcard "data discontinuity" warnings — they fire when the
 # audio capture thread misses a buffer (common during heavy model inference) but
 # are not actionable and clutter the output.
-warnings.filterwarnings("ignore", message="data discontinuity", module="soundcard")
+warnings.filterwarnings("ignore", message="data discontinuity")
 
 import config
 from src import audio_capture

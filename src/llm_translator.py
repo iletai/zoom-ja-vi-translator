@@ -29,10 +29,13 @@ except Exception:  # pragma: no cover - fallback for partial environments
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
-    "Bạn là chuyên gia dịch thuật trong lĩnh vực CNTT và kinh doanh. "
-    "Dịch chính xác từ tiếng Nhật sang tiếng Việt. "
-    "Giữ nguyên thuật ngữ kỹ thuật (deploy, sprint, backlog...) khi phù hợp. "
-    "Chỉ trả lời bản dịch, không giải thích thêm."
+    "You are a real-time Japanese-to-Vietnamese translator for IT meetings. "
+    "STRICT RULES:\n"
+    "1. Output ONLY the Vietnamese translation. ONE line. Nothing else.\n"
+    "2. NEVER refuse, explain, apologize, or add commentary.\n"
+    "3. NEVER output Japanese or English (except technical terms like AWS, API, deploy).\n"
+    "4. For filler words (うん, はい, ええ, なるほど): output 'Vâng' or 'Đúng rồi'.\n"
+    "5. If unsure, give your best Vietnamese translation anyway."
 )
 
 
@@ -130,12 +133,14 @@ class LlmTranslator:
                     messages=messages,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
+                    stop=["\n", "JP:", "Translate", "Note:"],
                 )
                 translation = self._clean_translation(self._extract_translation(response))
                 if not translation:
                     logger.warning("Empty LLM translation for JP sentence: %r", cleaned)
                     return ""
-                if update_context and self._keep_context:
+                # Only add valid translations to context (prevents pollution)
+                if update_context and self._keep_context and len(translation) < 300:
                     self._history.append((cleaned, translation))
                 return translation
         except Exception as exc:
@@ -143,26 +148,15 @@ class LlmTranslator:
             return ""
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
-        user_lines = []
-        context_block = self._build_context_block()
-        if context_block:
-            user_lines.append("Ngữ cảnh hội thoại gần đây (JP -> VI):")
-            user_lines.append(context_block)
-            user_lines.append("")
-        user_lines.append("Hãy dịch câu tiếng Nhật sau sang tiếng Việt:")
-        user_lines.append(f"JP: {text}")
-        user_lines.append("VI:")
-        return [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": "\n".join(user_lines)},
-        ]
-
-    def _build_context_block(self) -> str:
-        if not self._keep_context or not self._history:
-            return ""
-        return "\n\n".join(
-            f"JP: {jp}\nVI: {vi}" for jp, vi in list(self._history)[-self.context_sentences :]
-        )
+        messages = [{"role": "system", "content": self.system_prompt}]
+        # Add context as few-shot examples with explicit format
+        if self._keep_context and self._history:
+            for jp, vi in list(self._history)[-self.context_sentences:]:
+                messages.append({"role": "user", "content": f"Translate to Vietnamese: {jp}"})
+                messages.append({"role": "assistant", "content": vi})
+        # Current sentence to translate
+        messages.append({"role": "user", "content": f"Translate to Vietnamese: {text}"})
+        return messages
 
     @staticmethod
     def _extract_translation(response: Any) -> str:
@@ -197,15 +191,46 @@ class LlmTranslator:
             return "".join(parts)
         return str(content or "")
 
+    # Patterns that indicate LLM refused or explained instead of translating
+    _REFUSAL_PATTERNS = (
+        "tôi sẽ không dịch",
+        "tôi không thể dịch",
+        "có nghĩa là",
+        "câu tiếng nhật",
+        "bản dịch là",
+        "hướng dẫn cho việc dịch",
+        "i cannot translate",
+        "i won't translate",
+        "i can't translate",
+    )
+
     @staticmethod
     def _clean_translation(text: str) -> str:
         cleaned = text.strip()
         for prefix in ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:"):
             if cleaned.lower().startswith(prefix.lower()):
-                cleaned = cleaned[len(prefix) :].strip()
+                cleaned = cleaned[len(prefix):].strip()
+        # Take first line only
         if "\n" in cleaned:
             cleaned = next((line.strip() for line in cleaned.splitlines() if line.strip()), "")
-        return cleaned.strip("`'\" ")
+        cleaned = cleaned.strip("`'\" ")
+        # Reject refusals/explanations
+        lower = cleaned.lower()
+        for pattern in LlmTranslator._REFUSAL_PATTERNS:
+            if pattern in lower:
+                logger.warning("LLM refused/explained instead of translating: %r", cleaned)
+                return ""
+        # Reject if too long relative to reasonable translation (likely explanation)
+        if len(cleaned) > 500:
+            logger.warning("LLM output too long, likely explanation: %r", cleaned[:100])
+            return ""
+        # Reject repetitive gibberish (e.g. "yayayayaya...")
+        if len(cleaned) > 20:
+            words = cleaned.split()
+            if words and len(set(words)) <= 2:
+                logger.warning("LLM output is repetitive gibberish: %r", cleaned[:50])
+                return ""
+        return cleaned
 
 
 if __name__ == "__main__":
