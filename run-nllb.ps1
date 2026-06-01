@@ -1,4 +1,4 @@
-# Chạy translator với NLLB-600M (nhanh, nhẹ RAM, không cần LLM)
+﻿# Chạy translator với NLLB-600M (nhanh, nhẹ RAM, không cần LLM)
 # Không cần tham số — chỉ cần chạy: .\run-nllb.ps1
 #
 # NLLB-600M: dịch nhanh nhưng không có ngữ cảnh giữa các câu.
@@ -69,9 +69,9 @@ $logFile = Join-Path $logDir "run_${timestamp}.jsonl"
 
 # ─── Banner ───────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "  ╔═══════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║  Zoom JA→VI Translator [NLLB]        ║" -ForegroundColor Cyan
-Write-Host "  ╚═══════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "  ========================================" -ForegroundColor Cyan
+Write-Host "   Zoom JA->VI Translator [NLLB]" -ForegroundColor Cyan
+Write-Host "  ========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Model     : NLLB-600M (CTranslate2, int8)" -ForegroundColor White
 Write-Host "  ASR       : ReazonSpeech k2-v2 + IT hotwords" -ForegroundColor White

@@ -1,4 +1,4 @@
-# Chạy translator với Qwen2.5-1.5B LLM (chất lượng tốt nhất cho meeting IT)
+﻿# Chạy translator với Qwen2.5-1.5B LLM (chất lượng tốt nhất cho meeting IT)
 # Không cần tham số — chỉ cần chạy: .\run-qwen.ps1
 #
 # Qwen2.5-1.5B: dịch có ngữ cảnh, hiểu thuật ngữ IT tốt hơn NLLB.
@@ -82,9 +82,9 @@ $logFile = Join-Path $logDir "run_${timestamp}.jsonl"
 # ─── Banner ───────────────────────────────────────────────────────────────
 $modelName = if (Test-Path $model1p5b) { "Qwen2.5-1.5B" } else { "Qwen2.5-3B" }
 Write-Host ""
-Write-Host "  ╔═══════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║  Zoom JA→VI Translator [Qwen LLM]    ║" -ForegroundColor Cyan
-Write-Host "  ╚═══════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "  ========================================" -ForegroundColor Cyan
+Write-Host "   Zoom JA->VI Translator [Qwen LLM]" -ForegroundColor Cyan
+Write-Host "  ========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Model     : $modelName (Q4_K_M, context-aware)" -ForegroundColor White
 Write-Host "  ASR       : ReazonSpeech k2-v2 + IT hotwords" -ForegroundColor White
