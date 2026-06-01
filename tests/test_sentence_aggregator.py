@@ -92,8 +92,22 @@ def test_continuation_particles_never_split() -> None:
 
 def test_dangling_fragment_detection() -> None:
     agg = SentenceAggregator()
-    assert agg.is_dangling("かと")
-    assert agg.is_dangling("が")
+    for text in (
+        "かと",
+        "が",
+        "ですね",
+        "ますね",
+        "ですよね",
+        "だよね",
+        "ですよ",
+        "みたいな",
+        "っぽい",
+        "ということ",
+        "ということで",
+        "なんですけど",
+        "なんですが",
+    ):
+        assert agg.is_dangling(text)
     assert not agg.is_dangling("はい")
     assert not agg.is_dangling("分かりました")
 

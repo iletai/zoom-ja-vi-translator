@@ -31,11 +31,12 @@ except Exception:  # pragma: no cover - fallback for partial environments
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
-    "Bạn là mô hình dịch thuật chuyên nghiệp trong lĩnh vực CNTT. "
-    "Dịch chính xác từ tiếng Nhật sang tiếng Việt. "
-    "Giữ nguyên thuật ngữ kỹ thuật: Cloud, API, deploy, sprint, AWS, IoT, AI, "
-    "on-premises, architect, solution, enterprise, public sector. "
-    "Chỉ xuất bản dịch, không giải thích thêm."
+    "Bạn là phiên dịch viên chuyên nghiệp Nhật-Việt trong meeting IT. "
+    "QUY TẮC: "
+    "1. Chỉ xuất bản dịch tiếng Việt, không giải thích. "
+    "2. Giữ nguyên thuật ngữ tiếng Anh: Cloud, AWS, API, deploy, sprint, IoT, AI, Lambda, EC2, S3. "
+    "3. Dịch ngắn gọn, tự nhiên. Bỏ kính ngữ thừa. "
+    "4. Tên riêng giữ nguyên romaji: Akihabara, Shibuya, Tokyo."
 )
 
 
@@ -143,32 +144,153 @@ class LlmTranslator:
         "ですね": "Đúng vậy",
         "っていう": "Nghĩa là",
         "ます": "...",
+        "お疲れ様です": "Xin chào",
+        "お疲れ様でした": "Cảm ơn đã vất vả",
+        "よろしくお願いします": "Xin vui lòng hỗ trợ",
+        "よろしくお願いいたします": "Rất mong được hỗ trợ",
+        "ありがとうございます": "Cảm ơn",
+        "承知しました": "Tôi đã hiểu",
+        "了解です": "Đã hiểu",
+        "了解しました": "Đã hiểu rồi",
+        "かしこまりました": "Vâng, tôi hiểu",
+        "おっしゃる通りです": "Đúng như bạn nói",
+        "そういうことですね": "À ra là vậy",
+        "その通りです": "Đúng vậy",
+        "間違いないです": "Không sai",
+        "以上です": "Trên đây là tất cả",
+        "以上になります": "Trên đây là tất cả",
     }
+
+    # Keigo simplification: verbose honorific → plain form (pre-processing).
+    _KEIGO_SIMPLIFY = [
+        ("させていただきます", "します"),
+        ("させていただく", "する"),
+        ("させていただいて", "して"),
+        ("させていただければ", "すれば"),
+        ("いただけますでしょうか", "もらえますか"),
+        ("いただけますか", "もらえますか"),
+        ("いただきたい", "ほしい"),
+        ("でございます", "です"),
+        ("申し上げます", "言います"),
+        ("おっしゃる", "言う"),
+        ("いらっしゃる", "いる"),
+        ("ございます", "あります"),
+        ("存じます", "思います"),
+        ("いたします", "します"),
+        ("いたしました", "しました"),
+    ]
 
     # Katakana IT terms → English. Used as pre-processing substitution (mid-sentence).
     # Sorted by length (longest first) at substitution time to avoid partial matches.
     _KATAKANA_TERM_MAP = {
         "ソリューションアーキテクト": "Solution Architect",
-        "クラウドファースト": "Cloud First",
-        "マイクロサービス": "microservice",
+        "ミッションクリティカル": "mission-critical",
+        "プレゼンテーション": "presentation",
+        "インテグレーション": "integration",
         "パブリックセクター": "public sector",
-        "テクノロジー": "Technology",
-        "ウェブサービス": "Web Services",
-        "オンプレミス": "on-premises",
+        "プルリクエスト": "pull request",
+        "フレームワーク": "framework",
+        "マイクロサービス": "microservice",
+        "リファインメント": "refinement",
+        "リファクタリング": "refactoring",
+        "インターフェース": "interface",
+        "ステークホルダー": "stakeholder",
+        "ロードバランサー": "load balancer",
+        "クラウドファースト": "Cloud First",
         "エンタープライズ": "enterprise",
+        "ウェブサービス": "Web Services",
+        "ユニットテスト": "unit test",
+        "コンポーネント": "component",
+        "フィードバック": "feedback",
+        "マイルストーン": "milestone",
+        "イーシーツー": "EC2",
+        "エスキューエス": "SQS",
+        "テクノロジー": "Technology",
+        "データベース": "database",
+        "パイプライン": "pipeline",
         "マイグレーション": "migration",
+        "モニタリング": "monitoring",
+        "ロールバック": "rollback",
+        "オンプレミス": "on-premises",
         "サーバーレス": "serverless",
         "アーキテクト": "architect",
-        "エンジニア": "engineer",
+        "スケジュール": "schedule",
+        "ネットワーク": "network",
+        "ライブラリ": "library",
         "バックログ": "backlog",
+        "プロジェクト": "project",
         "スプリント": "sprint",
-        "ロボット": "robot",
+        "エンジニア": "engineer",
+        "レビュー": "review",
+        "スクラム": "Scrum",
+        "アジェンダ": "agenda",
         "アマゾン": "Amazon",
-        "クラウド": "Cloud",
-        "オンプレ": "on-premises",
-        "デプロイ": "deploy",
         "インフラ": "infrastructure",
+        "オンプレ": "on-premises",
+        "クラウド": "Cloud",
+        "コミット": "commit",
         "コンテナ": "container",
+        "サーバー": "server",
+        "デバッグ": "debug",
+        "デプロイ": "deploy",
+        "ブランチ": "branch",
+        "モジュール": "module",
+        "リリース": "release",
+        "ロボット": "robot",
+        "キャッシュ": "cache",
+        "エスサン": "S3",
+        "マージ": "merge",
+        "ラムダ": "Lambda",
+        "タスク": "task",
+    }
+
+    _BUSINESS_GLOSSARY = {
+        "検討": "xem xét",
+        "対応": "xử lý",
+        "確認": "xác nhận",
+        "共有": "chia sẻ",
+        "実装": "triển khai",
+        "移行": "chuyển đổi",
+        "担当": "phụ trách",
+        "従事": "tham gia",
+        "活躍": "hoạt động",
+        "導入": "đưa vào",
+        "運用": "vận hành",
+        "構築": "xây dựng",
+        "開発": "phát triển",
+        "設計": "thiết kế",
+        "管理": "quản lý",
+        "提案": "đề xuất",
+        "説明": "giải thích",
+        "報告": "báo cáo",
+        "推進": "thúc đẩy",
+        "連携": "liên kết",
+        "基幹": "cơ bản/nền tảng",
+    }
+
+    # Proper nouns (place names, companies) that the model fails to transliterate.
+    # Pre-processed to romaji/English before LLM translation.
+    _PROPER_NOUN_MAP = {
+        # Japanese cities/areas
+        "秋葉原": "Akihabara",
+        "渋谷": "Shibuya",
+        "新宿": "Shinjuku",
+        "東京": "Tokyo",
+        "大阪": "Osaka",
+        "名古屋": "Nagoya",
+        "福岡": "Fukuoka",
+        "北海道": "Hokkaido",
+        "六本木": "Roppongi",
+        # IT Companies
+        "グーグル": "Google",
+        "マイクロソフト": "Microsoft",
+        "アップル": "Apple",
+        "メタ": "Meta",
+        "オラクル": "Oracle",
+        # Organizations
+        "経済産業省": "Bộ Kinh tế Nhật",
+        "デジタル庁": "Cơ quan Kỹ thuật số",
+        "総務省": "Bộ Nội vụ Nhật",
     }
 
     # CJK single-digit numerals → Arabic digit (applied before kanji stripping).
@@ -202,13 +324,26 @@ class LlmTranslator:
                 self._history.append((cleaned, katakana_result))
             return katakana_result
 
+        # Simplify keigo (honorific) patterns to plain form for cleaner translation.
+        processed = cleaned
+        for keigo, plain in self._KEIGO_SIMPLIFY:
+            processed = processed.replace(keigo, plain)
+
         # Pre-process: replace known katakana IT terms with English equivalents
         # so the LLM doesn't mistranslate them. Longest match first.
-        processed = cleaned
         for ja_term, en_term in sorted(
             self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0])
         ):
             processed = processed.replace(ja_term, en_term)
+
+        # Inject Vietnamese hints for kanji business terms (helps LLM accuracy)
+        for kanji, hint in self._BUSINESS_GLOSSARY.items():
+            if kanji in processed:
+                processed = processed.replace(kanji, f"{kanji}({hint})", 1)
+
+        # Replace proper nouns with romaji/English equivalents
+        for noun, replacement in self._PROPER_NOUN_MAP.items():
+            processed = processed.replace(noun, replacement)
 
         try:
             with self._lock:

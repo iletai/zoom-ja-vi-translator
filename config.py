@@ -349,10 +349,12 @@ LLM_CONTEXT_SENTENCES = int(os.environ.get("ZT_LLM_CONTEXT", "3"))
 LLM_USE_MLOCK = _env_flag("ZT_LLM_MLOCK", False)
 LLM_SYSTEM_PROMPT = os.environ.get(
     "ZT_LLM_PROMPT",
-    "Bạn là chuyên gia dịch thuật trong lĩnh vực CNTT và kinh doanh. "
-    "Dịch chính xác từ tiếng Nhật sang tiếng Việt. "
-    "Giữ nguyên thuật ngữ kỹ thuật (deploy, sprint, backlog...) khi phù hợp. "
-    "Chỉ trả lời bản dịch, không giải thích thêm.",
+    "Bạn là phiên dịch viên chuyên nghiệp Nhật-Việt trong meeting IT. "
+    "QUY TẮC: "
+    "1. Chỉ xuất bản dịch tiếng Việt, không giải thích. "
+    "2. Giữ nguyên thuật ngữ tiếng Anh: Cloud, AWS, API, deploy, sprint, IoT, AI, Lambda, EC2, S3. "
+    "3. Dịch ngắn gọn, tự nhiên. Bỏ kính ngữ thừa. "
+    "4. Tên riêng giữ nguyên romaji: Akihabara, Shibuya, Tokyo.",
 )
 
 # ─── Cloud backend (optional, --cloud) ──────────────────────────────────

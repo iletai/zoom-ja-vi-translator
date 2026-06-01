@@ -126,7 +126,10 @@ class SentenceAggregator:
     # they are kept buffered to merge with the next utterance instead.
     _DANGLING = frozenset(
         {"かと", "ので", "から", "けど", "けれど", "と", "が", "の", "を", "に",
-         "は", "で", "も", "よ", "ね", "かな", "って"}
+         "は", "で", "も", "よ", "ね", "かな", "って",
+         "ですね", "ますね", "ですよね", "だよね", "ですよ",
+         "みたいな", "っぽい", "ということ", "ということで",
+         "なんですけど", "なんですが"}
     )
 
     def __init__(self) -> None:
