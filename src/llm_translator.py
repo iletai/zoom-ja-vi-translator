@@ -224,8 +224,31 @@ class LlmTranslator:
                 )
                 translation = self._clean_translation(self._extract_translation(response))
                 if not translation:
-                    logger.warning("Empty LLM translation for JP sentence: %r", cleaned)
-                    return ""
+                    retry_messages = [
+                        {
+                            "role": "system",
+                            "content": "Dịch tiếng Nhật sang tiếng Việt. Chỉ xuất bản dịch.",
+                        },
+                        {"role": "user", "content": processed},
+                    ]
+                    retry_response = self.llm.create_chat_completion(
+                        messages=retry_messages,
+                        temperature=0.3,
+                        top_p=0.5,
+                        frequency_penalty=0.2,
+                        max_tokens=self.max_tokens,
+                        stop=["\n", "\n\n", "<|im_end|>"],
+                    )
+                    translation = self._clean_translation(
+                        self._extract_translation(retry_response)
+                    )
+                    if not translation:
+                        logger.warning(
+                            "Empty LLM translation for JP sentence (after retry): %r",
+                            cleaned,
+                        )
+                        return ""
+                    logger.info("Retry succeeded for: %r -> %r", cleaned, translation[:50])
                 # Only add valid translations to context (prevents pollution)
                 if update_context and self._keep_context and len(translation) < 300:
                     self._history.append((cleaned, translation))
@@ -236,6 +259,19 @@ class LlmTranslator:
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": self.system_prompt}]
+        # Fixed one-shot example to anchor Vietnamese output format.
+        messages.append(
+            {
+                "role": "user",
+                "content": "Dịch sang tiếng Việt: クラウドのarchitectureについて説明します",
+            }
+        )
+        messages.append(
+            {
+                "role": "assistant",
+                "content": "Tôi sẽ giải thích về kiến trúc Cloud.",
+            }
+        )
         # Skip context for very short inputs — small models tend to repeat
         # previous translations when the current input is just 1-3 chars.
         context_line = ""
@@ -286,6 +322,10 @@ class LlmTranslator:
     _REFUSAL_PATTERNS = (
         "tôi sẽ không dịch",
         "tôi không thể dịch",
+        "tôi sẽ dịch",
+        "đoạn văn này",
+        "xin chào",
+        "chào bạn",
         "có nghĩa là",
         "câu tiếng nhật",
         "bản dịch là",
@@ -306,9 +346,24 @@ class LlmTranslator:
     @staticmethod
     def _clean_translation(text: str) -> str:
         cleaned = text.strip()
-        for prefix in ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:", "Dịch sang tiếng Việt:"):
+        prefixes = ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:", "Dịch sang tiếng Việt:")
+        for prefix in prefixes:
             if cleaned.lower().startswith(prefix.lower()):
                 cleaned = cleaned[len(prefix):].strip()
+        colon_index = cleaned.rfind(":")
+        if colon_index != -1:
+            meta_prefix = cleaned[:colon_index].strip()
+            candidate = cleaned[colon_index + 1:].strip()
+            if (
+                meta_prefix
+                and candidate
+                and len(meta_prefix) < 50
+                and any(word in meta_prefix.lower() for word in ("dịch", "bản", "sau", "tiếng"))
+            ):
+                cleaned = candidate
+                for prefix in prefixes:
+                    if cleaned.lower().startswith(prefix.lower()):
+                        cleaned = cleaned[len(prefix):].strip()
         # Take first line only
         if "\n" in cleaned:
             cleaned = next((line.strip() for line in cleaned.splitlines() if line.strip()), "")
