@@ -35,9 +35,12 @@ _DEFAULT_SYSTEM_PROMPT = (
     "STRICT RULES:\n"
     "1. Output ONLY the Vietnamese translation. ONE line. Nothing else.\n"
     "2. NEVER refuse, explain, apologize, or add commentary.\n"
-    "3. NEVER output Japanese or English (except technical terms like AWS, API, deploy).\n"
-    "4. For filler words (うん, はい, ええ, なるほど): output 'Vâng' or 'Đúng rồi'.\n"
-    "5. If unsure, give your best Vietnamese translation anyway."
+    "3. NEVER output Japanese characters. NEVER output full English sentences.\n"
+    "4. Keep IT terms as-is: Cloud First, on-premises, IoT, AI, AWS, API, deploy, sprint.\n"
+    "5. Translate katakana IT terms to English: クラウド=Cloud, オンプレミス=on-premises, "
+    "デプロイ=deploy, アーキテクト=architect, ソリューション=solution, "
+    "エンタープライズ=enterprise, パブリックセクター=public sector.\n"
+    "6. If unsure, give your best Vietnamese translation anyway."
 )
 
 
@@ -134,7 +137,33 @@ class LlmTranslator:
         "なるほど": "Ra vậy",
         "そうですね": "Đúng vậy nhỉ",
         "そうそう": "Đúng, đúng",
+        "ですね": "Đúng vậy",
+        "っていう": "Nghĩa là",
+        "ます": "...",
     }
+
+    # Common katakana IT terms the model consistently mistranslates
+    _KATAKANA_TERM_MAP = {
+        "クラウドファースト": "Cloud First",
+        "クラウド": "Cloud",
+        "オンプレミス": "on-premises",
+        "オンプレ": "on-premises",
+        "デプロイ": "deploy",
+        "バックログ": "backlog",
+        "スプリント": "sprint",
+        "アーキテクト": "architect",
+        "ソリューションアーキテクト": "Solution Architect",
+        "エンタープライズ": "enterprise",
+        "パブリックセクター": "public sector",
+        "マイグレーション": "migration",
+        "インフラ": "infrastructure",
+        "コンテナ": "container",
+        "サーバーレス": "serverless",
+        "マイクロサービス": "microservice",
+    }
+
+    # Vietnamese diacritical characters
+    _VI_DIACRITICS_RE = re.compile(r'[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]', re.IGNORECASE)
 
     def _translate_one(self, text: str, update_context: bool = True) -> str:
         cleaned = text.strip() if text else ""
@@ -147,6 +176,13 @@ class LlmTranslator:
             if update_context and self._keep_context:
                 self._history.append((cleaned, filler_result))
             return filler_result
+
+        # Check short katakana IT terms (model consistently gets these wrong)
+        katakana_result = self._KATAKANA_TERM_MAP.get(cleaned)
+        if katakana_result:
+            if update_context and self._keep_context:
+                self._history.append((cleaned, katakana_result))
+            return katakana_result
 
         try:
             with self._lock:
@@ -226,8 +262,10 @@ class LlmTranslator:
         "i can't translate",
     )
 
-    # Regex to detect Japanese characters (Hiragana, Katakana, CJK)
-    _JP_CHARS_RE = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]')
+    # Regex to detect Japanese-specific characters (Hiragana, Katakana only)
+    _JP_KANA_RE = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
+    # CJK Unified Ideographs (Kanji - shared with Chinese/Vietnamese)
+    _CJK_RE = re.compile(r'[\u4E00-\u9FFF]')
 
     @staticmethod
     def _clean_translation(text: str) -> str:
@@ -239,10 +277,22 @@ class LlmTranslator:
         if "\n" in cleaned:
             cleaned = next((line.strip() for line in cleaned.splitlines() if line.strip()), "")
         cleaned = cleaned.strip("`'\" ")
-        # Reject if output contains Japanese characters (model echoed input)
-        if LlmTranslator._JP_CHARS_RE.search(cleaned):
-            logger.warning("LLM output contains Japanese chars, rejecting: %r", cleaned[:80])
+        # Reject if output contains Hiragana/Katakana (definitely JP, not translation)
+        if LlmTranslator._JP_KANA_RE.search(cleaned):
+            logger.warning("LLM output contains Japanese kana, rejecting: %r", cleaned[:80])
             return ""
+        # If there are a few stray Kanji, strip them out instead of rejecting
+        # (model sometimes leaves 1-2 kanji in an otherwise valid translation)
+        if LlmTranslator._CJK_RE.search(cleaned):
+            stripped = LlmTranslator._CJK_RE.sub("", cleaned).strip()
+            # If removing kanji leaves >60% of original length, use the stripped version
+            if len(stripped) > len(cleaned) * 0.5 and len(stripped) > 5:
+                logger.debug("Stripped stray kanji from output: %r -> %r", cleaned[:60], stripped[:60])
+                cleaned = stripped
+            else:
+                # Too much kanji = model echoed input
+                logger.warning("LLM output is mostly kanji, rejecting: %r", cleaned[:80])
+                return ""
         # Reject refusals/explanations
         lower = cleaned.lower()
         for pattern in LlmTranslator._REFUSAL_PATTERNS:
@@ -259,6 +309,11 @@ class LlmTranslator:
             if words and len(set(words)) <= 2:
                 logger.warning("LLM output is repetitive gibberish: %r", cleaned[:50])
                 return ""
+        # Reject full English output (no Vietnamese diacritics + many words)
+        words = cleaned.split()
+        if len(words) > 5 and not LlmTranslator._VI_DIACRITICS_RE.search(cleaned):
+            logger.warning("LLM output appears to be English, not Vietnamese: %r", cleaned[:80])
+            return ""
         return cleaned
 
 
