@@ -20,7 +20,8 @@ class JapaneseASR:
 
     def __init__(self) -> None:
         model_files = self._find_model_files(Path(config.ASR_MODEL_DIR))
-        self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+
+        recognizer_kwargs = dict(
             encoder=str(model_files["encoder"]),
             decoder=str(model_files["decoder"]),
             joiner=str(model_files["joiner"]),
@@ -29,8 +30,15 @@ class JapaneseASR:
             provider=config.ASR_PROVIDER,
             sample_rate=self.SAMPLE_RATE,
             feature_dim=self.FEATURE_DIM,
-            decoding_method="greedy_search",
+            decoding_method=config.ASR_DECODING_METHOD,
         )
+
+        hotwords_path = Path(config.ASR_HOTWORDS_FILE)
+        if hotwords_path.is_file() and config.ASR_DECODING_METHOD == "modified_beam_search":
+            recognizer_kwargs["hotwords_file"] = str(hotwords_path)
+            recognizer_kwargs["hotwords_score"] = config.ASR_HOTWORDS_SCORE
+
+        self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(**recognizer_kwargs)
         self.warmup()
 
     def transcribe(self, audio_float32: np.ndarray) -> str:

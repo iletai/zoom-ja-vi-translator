@@ -9,11 +9,13 @@
 #   ./run.ps1 -ListDevices    # list audio devices and exit
 #   ./run.ps1 -Mic            # capture the default microphone instead
 #   ./run.ps1 -Log            # capture with evidence logging enabled
+#   ./run.ps1 -Llm            # use the local Qwen LLM translation backend
 
 param(
     [switch]$ListDevices,
     [switch]$Mic,
-    [switch]$Log
+    [switch]$Log,
+    [switch]$Llm
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,6 +58,20 @@ if (-not (Test-Path ".venv\.deps_installed")) {
 if (-not (Test-Path "models\reazonspeech-k2-v2")) {
     Write-Host "==> Downloading models (first run only, ~2.5 GB)..."
     python scripts\download_models.py
+}
+
+if ($Llm) {
+    $env:ZT_TRANSLATOR = "llm"
+    $modelPath = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+    if (-not (Test-Path $modelPath)) {
+        Write-Host "LLM model not found. Downloading Qwen2.5-3B..." -ForegroundColor Yellow
+        python scripts\download_qwen_model.py
+        if (($LASTEXITCODE -ne 0) -or -not (Test-Path $modelPath)) {
+            Write-Host "Failed to download LLM model." -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host "LLM translation mode active (Qwen2.5-3B)" -ForegroundColor Cyan
 }
 
 # HuggingFace offline mode (no network needed after models are downloaded).

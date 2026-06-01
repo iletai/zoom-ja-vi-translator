@@ -23,6 +23,8 @@ from src.display import SubtitleDisplay
 from src.local_agreement import LocalAgreementBuffer
 from src.sentence_aggregator import SentenceAggregator, split_japanese_sentences
 from src.translator import NllbTranslator, join_translations
+# LLM translator is imported lazily to avoid ImportError when llama-cpp-python
+# is not installed and the user is using the default NLLB backend.
 from src.vad import VadSegmenter
 
 
@@ -95,8 +97,9 @@ class TranslationPipeline:
             self._translate_thread = None
             return
 
-        self.display.info("Loading models (ASR + translator)...")
-        self.translator = NllbTranslator()
+        backend_label = "LLM/Qwen2.5" if config.TRANSLATOR_BACKEND == "llm" else "NLLB"
+        self.display.info(f"Loading models (ASR + {backend_label} translator)...")
+        self.translator = self._create_translator()
         if self.streaming:
             from src.streaming_asr import StreamingJapaneseASR
 
@@ -113,7 +116,7 @@ class TranslationPipeline:
             self.segmenter = VadSegmenter()
         if self.asr is not None and config.OFFLINE_AGGREGATE_SENTENCES:
             self._offline_aggregator = SentenceAggregator()
-        self.display.info("Models ready.")
+        self.display.info(f"Models ready. Translator: {config.TRANSLATOR_BACKEND.upper()}")
 
         self._capture = AudioCapture(self.device, self._audio_queue, self.stop_event)
         asr_target = self._streaming_asr_worker if self.streaming else self._asr_worker
@@ -129,6 +132,25 @@ class TranslationPipeline:
 
             return AzureSpeechTranslator
         raise ValueError(f"Unknown cloud backend: {backend!r} (supported: azure)")
+
+    def _create_translator(self):
+        """Create the translation engine based on config.TRANSLATOR_BACKEND."""
+        if config.TRANSLATOR_BACKEND == "llm":
+            try:
+                from src.llm_translator import LlmTranslator
+
+                return LlmTranslator()
+            except ImportError as e:
+                self.display.info(
+                    f"[Warning] llama-cpp-python not installed, falling back to NLLB: {e}"
+                )
+                return NllbTranslator()
+            except FileNotFoundError as e:
+                self.display.info(
+                    f"[Warning] LLM model not found, falling back to NLLB: {e}"
+                )
+                return NllbTranslator()
+        return NllbTranslator()
 
     def _cloud_worker(self) -> None:
         """Stream captured audio to the cloud translator.

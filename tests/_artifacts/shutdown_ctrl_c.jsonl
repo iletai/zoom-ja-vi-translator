@@ -1,9 +1,9 @@
-{"ts": "23:31:23", "t_ms": 2188.7, "thread": "MainThread", "event": "session_start", "pid": 15455}
-{"ts": "23:31:23", "t_ms": 2188.8, "thread": "MainThread", "event": "enqueue", "seq": 1, "text": "割り込み1です。", "pre_shown": true, "queue_size": 0}
-{"ts": "23:31:23", "t_ms": 2188.9, "thread": "MainThread", "event": "enqueue", "seq": 2, "text": "割り込み2です。", "pre_shown": true, "queue_size": 1}
-{"ts": "23:31:23", "t_ms": 2188.9, "thread": "MainThread", "event": "enqueue", "seq": 3, "text": "割り込み3です。", "pre_shown": true, "queue_size": 2}
-{"ts": "23:31:23", "t_ms": 2188.9, "thread": "MainThread", "event": "enqueue", "seq": 4, "text": "割り込み4です。", "pre_shown": true, "queue_size": 3}
-{"ts": "23:31:23", "t_ms": 2188.9, "thread": "MainThread", "event": "enqueue", "seq": 5, "text": "割り込み5です。", "pre_shown": true, "queue_size": 4}
-{"ts": "23:31:23", "t_ms": 2189.0, "thread": "MainThread", "event": "enqueue", "seq": 6, "text": "割り込み6です。", "pre_shown": true, "queue_size": 5}
-{"ts": "23:31:23", "t_ms": 2242.5, "thread": "MainThread", "event": "shutdown_unflushed", "text_queue": 6, "segment_queue": 0, "reason": "ctrl_c"}
-{"ts": "23:31:23", "t_ms": 2242.6, "thread": "MainThread", "event": "shutdown_drain_skipped", "reason": "ctrl_c", "translate_thread_alive": true}
+{"ts": "12:11:50", "t_ms": 1079.0, "thread": "MainThread", "event": "session_start", "pid": 1144}
+{"ts": "12:11:50", "t_ms": 1079.0, "thread": "MainThread", "event": "enqueue", "seq": 1, "text": "割り込み1です。", "pre_shown": true, "queue_size": 0}
+{"ts": "12:11:50", "t_ms": 1079.0, "thread": "MainThread", "event": "enqueue", "seq": 2, "text": "割り込み2です。", "pre_shown": true, "queue_size": 1}
+{"ts": "12:11:50", "t_ms": 1079.0, "thread": "MainThread", "event": "enqueue", "seq": 3, "text": "割り込み3です。", "pre_shown": true, "queue_size": 2}
+{"ts": "12:11:50", "t_ms": 1079.0, "thread": "MainThread", "event": "enqueue", "seq": 4, "text": "割り込み4です。", "pre_shown": true, "queue_size": 3}
+{"ts": "12:11:50", "t_ms": 1079.0, "thread": "MainThread", "event": "enqueue", "seq": 5, "text": "割り込み5です。", "pre_shown": true, "queue_size": 4}
+{"ts": "12:11:50", "t_ms": 1079.0, "thread": "MainThread", "event": "enqueue", "seq": 6, "text": "割り込み6です。", "pre_shown": true, "queue_size": 5}
+{"ts": "12:11:50", "t_ms": 1125.0, "thread": "MainThread", "event": "shutdown_unflushed", "text_queue": 6, "segment_queue": 0, "reason": "ctrl_c"}
+{"ts": "12:11:50", "t_ms": 1125.0, "thread": "MainThread", "event": "shutdown_drain_skipped", "reason": "ctrl_c", "translate_thread_alive": true}

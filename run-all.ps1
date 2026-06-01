@@ -7,10 +7,12 @@
 # Usage:
 #   ./run-all.ps1                  # translator + web dashboard
 #   ./run-all.ps1 -Streaming       # use low-latency streaming ASR
+#   ./run-all.ps1 -Llm             # use the local Qwen LLM translation backend
 #   ./run-all.ps1 -Port 8600       # custom Streamlit port
 
 param(
     [switch]$Streaming,
+    [switch]$Llm,
     [int]$Port = 8501
 )
 
@@ -63,6 +65,19 @@ if (-not (Test-Path "models\reazonspeech-k2-v2")) {
     python scripts\download_models.py
 }
 
+if ($Llm) {
+    $modelPath = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+    if (-not (Test-Path $modelPath)) {
+        Write-Host "LLM model not found. Downloading Qwen2.5-3B..." -ForegroundColor Yellow
+        python scripts\download_qwen_model.py
+        if (($LASTEXITCODE -ne 0) -or -not (Test-Path $modelPath)) {
+            Write-Host "Failed to download LLM model." -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host "LLM translation mode active (Qwen2.5-3B)" -ForegroundColor Cyan
+}
+
 # HuggingFace offline mode.
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
@@ -86,8 +101,25 @@ Write-Host ""
 $translatorArgs = @("main.py", "--system-audio", "--log", $logFile)
 if ($Streaming) { $translatorArgs += "--streaming" }
 
-$translatorJob = Start-Process -FilePath "python" -ArgumentList $translatorArgs `
-    -NoNewWindow -PassThru
+$previousTranslator = $env:ZT_TRANSLATOR
+if ($Llm) {
+    $env:ZT_TRANSLATOR = "llm"
+}
+
+try {
+    $translatorJob = Start-Process -FilePath "python" -ArgumentList $translatorArgs `
+        -NoNewWindow -PassThru
+}
+finally {
+    if ($Llm) {
+        if ($null -eq $previousTranslator) {
+            Remove-Item Env:ZT_TRANSLATOR -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:ZT_TRANSLATOR = $previousTranslator
+        }
+    }
+}
 
 Write-Host "[Translator PID $($translatorJob.Id)] Capturing system audio..." -ForegroundColor Green
 

@@ -140,6 +140,19 @@ FAST_PROFILE = _env_flag("ZT_FAST", False)
 ASR_NUM_THREADS = int(os.environ.get("ASR_NUM_THREADS", str(_ASR_THREADS_DEFAULT)))
 ASR_PROVIDER = "cpu"
 
+# ─── ASR Hotwords (boost IT/domain vocabulary) ────────────────────────────
+# Path to hotwords file (one term per line, optional :score suffix).
+# Enables modified_beam_search decoding which biases the transducer toward
+# known domain terms. Set to "" or non-existent path to disable.
+ASR_HOTWORDS_FILE = Path(
+    os.environ.get("ZT_HOTWORDS_FILE", str(PROJECT_ROOT / "hotwords_it.txt"))
+)
+ASR_HOTWORDS_SCORE = float(os.environ.get("ZT_HOTWORDS_SCORE", "1.5"))
+ASR_DECODING_METHOD = os.environ.get(
+    "ZT_ASR_DECODING",
+    "modified_beam_search" if ASR_HOTWORDS_FILE.is_file() else "greedy_search"
+)
+
 # ─── Streaming ASR (online zipformer, opt-in via --streaming) ─────────────
 # Multilingual streaming zipformer (incl. Japanese). Emits partial hypotheses
 # as audio arrives, so the recognized text appears almost immediately instead of
@@ -241,6 +254,11 @@ OFFLINE_SENTENCE_MAX_WAIT_SEC = float(
     os.environ.get("ZT_OFFLINE_SENTENCE_MAX_WAIT_SEC", "2.5")
 )
 
+# ─── Translator backend selection ─────────────────────────────────────────
+# "nllb" (default): NLLB-600M/1.3B via CTranslate2 — fast, no context
+# "llm": Qwen2.5-3B via llama-cpp-python — context-aware, better IT quality
+TRANSLATOR_BACKEND = os.environ.get("ZT_TRANSLATOR", "nllb").lower()
+
 # ─── Translation (NLLB-600M via CTranslate2) ─────────────────────────────
 NLLB_HF_MODEL = "facebook/nllb-200-distilled-600M"   # for tokenizer
 # Hugging Face Hub revision used when fetching the tokenizer / model. Pinning a
@@ -301,6 +319,31 @@ NLLB_GLOSSARY = {
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
 NLLB_CT2_HF_REPO = "entai2965/nllb-200-distilled-600M-ctranslate2"
 NLLB_CT2_HF_REVISION = os.environ.get("NLLB_CT2_HF_REVISION", "main")
+
+# ─── LLM Translation (Qwen2.5-3B via llama-cpp-python, opt-in) ───────────
+# Alternative to NLLB for higher-quality context-aware translation.
+# Activate with ZT_TRANSLATOR=llm or --llm flag.
+LLM_MODEL_DIR = MODELS_DIR / "qwen2.5-3b-instruct"
+LLM_MODEL_PATH = Path(
+    os.environ.get(
+        "ZT_LLM_MODEL",
+        str(LLM_MODEL_DIR / "Qwen2.5-3B-Instruct-Q4_K_M.gguf"),
+    )
+)
+LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "1024"))
+LLM_N_THREADS = int(os.environ.get("ZT_LLM_THREADS", str(_PHYSICAL_CORES)))
+LLM_N_BATCH = int(os.environ.get("ZT_LLM_BATCH", "512"))
+LLM_TEMPERATURE = float(os.environ.get("ZT_LLM_TEMPERATURE", "0.1"))
+LLM_MAX_TOKENS = int(os.environ.get("ZT_LLM_MAX_TOKENS", "150"))
+LLM_CONTEXT_SENTENCES = int(os.environ.get("ZT_LLM_CONTEXT", "3"))
+LLM_USE_MLOCK = _env_flag("ZT_LLM_MLOCK", True)
+LLM_SYSTEM_PROMPT = os.environ.get(
+    "ZT_LLM_PROMPT",
+    "Bạn là chuyên gia dịch thuật trong lĩnh vực CNTT và kinh doanh. "
+    "Dịch chính xác từ tiếng Nhật sang tiếng Việt. "
+    "Giữ nguyên thuật ngữ kỹ thuật (deploy, sprint, backlog...) khi phù hợp. "
+    "Chỉ trả lời bản dịch, không giải thích thêm.",
+)
 
 # ─── Cloud backend (optional, --cloud) ──────────────────────────────────
 # Optional low-latency backend that streams audio to Azure Speech Translation

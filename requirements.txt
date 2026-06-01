@@ -22,3 +22,7 @@ huggingface_hub>=0.23.0
 
 # Optional: progress bars for model download
 tqdm>=4.66.0
+
+# LLM Translation: Qwen2.5 via llama.cpp (optional, for higher-quality context-aware translation)
+# Install with: pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.0
