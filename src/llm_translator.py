@@ -131,6 +131,12 @@ class LlmTranslator:
         "はい": "Vâng",
         "はいはい": "Vâng, vâng",
         "ええ": "Vâng",
+        "え": "Ơ",
+        "えっと": "À...",
+        "あの": "À...",
+        "ああ": "À",
+        "あ": "À",
+        "まあ": "Thôi thì",
         "なるほど": "Ra vậy",
         "そうですね": "Đúng vậy nhỉ",
         "そうそう": "Đúng, đúng",
@@ -146,14 +152,17 @@ class LlmTranslator:
         "クラウドファースト": "Cloud First",
         "マイクロサービス": "microservice",
         "パブリックセクター": "public sector",
+        "テクノロジー": "Technology",
         "ウェブサービス": "Web Services",
         "オンプレミス": "on-premises",
         "エンタープライズ": "enterprise",
         "マイグレーション": "migration",
         "サーバーレス": "serverless",
         "アーキテクト": "architect",
+        "エンジニア": "engineer",
         "バックログ": "backlog",
         "スプリント": "sprint",
+        "ロボット": "robot",
         "アマゾン": "Amazon",
         "クラウド": "Cloud",
         "オンプレ": "on-premises",
@@ -162,10 +171,13 @@ class LlmTranslator:
         "コンテナ": "container",
     }
 
-    # CJK numeral → Arabic digit (applied before kanji stripping)
+    # CJK single-digit numerals → Arabic digit (applied before kanji stripping).
+    # Compound markers (十百千万億) are stripped separately — they can't be
+    # trivially converted without full kanji number parsing.
     _CJK_NUMERAL_MAP = str.maketrans(
-        "〇一二三四五六七八九十百千万億",
-        "012345678900000",
+        {"〇": "0", "一": "1", "二": "2", "三": "3", "四": "4",
+         "五": "5", "六": "6", "七": "7", "八": "8", "九": "9",
+         "十": None, "百": None, "千": None, "万": None, "億": None}
     )
 
     # Vietnamese diacritical characters
@@ -224,9 +236,10 @@ class LlmTranslator:
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": self.system_prompt}]
-        # Inject context as plain text (avoids confusing small models with many turns)
+        # Skip context for very short inputs — small models tend to repeat
+        # previous translations when the current input is just 1-3 chars.
         context_line = ""
-        if self._keep_context and self._history:
+        if self._keep_context and self._history and len(text) > 4:
             recent = list(self._history)[-self.context_sentences:]
             context_line = "".join(
                 f"(前: {jp} → {vi})\n" for jp, vi in recent
@@ -277,6 +290,9 @@ class LlmTranslator:
         "câu tiếng nhật",
         "bản dịch là",
         "hướng dẫn cho việc dịch",
+        "đây là bản dịch",
+        "bản dịch sang tiếng việt",
+        "dịch sang tiếng việt:",
         "i cannot translate",
         "i won't translate",
         "i can't translate",
