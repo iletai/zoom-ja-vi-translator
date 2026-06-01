@@ -31,16 +31,11 @@ except Exception:  # pragma: no cover - fallback for partial environments
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
-    "You are a real-time Japanese-to-Vietnamese translator for IT meetings. "
-    "STRICT RULES:\n"
-    "1. Output ONLY the Vietnamese translation. ONE line. Nothing else.\n"
-    "2. NEVER refuse, explain, apologize, or add commentary.\n"
-    "3. NEVER output Japanese characters. NEVER output full English sentences.\n"
-    "4. Keep IT terms as-is: Cloud First, on-premises, IoT, AI, AWS, API, deploy, sprint.\n"
-    "5. Translate katakana IT terms to English: クラウド=Cloud, オンプレミス=on-premises, "
-    "デプロイ=deploy, アーキテクト=architect, ソリューション=solution, "
-    "エンタープライズ=enterprise, パブリックセクター=public sector.\n"
-    "6. If unsure, give your best Vietnamese translation anyway."
+    "Bạn là mô hình dịch thuật chuyên nghiệp trong lĩnh vực CNTT. "
+    "Dịch chính xác từ tiếng Nhật sang tiếng Việt. "
+    "Giữ nguyên thuật ngữ kỹ thuật: Cloud, API, deploy, sprint, AWS, IoT, AI, "
+    "on-premises, architect, solution, enterprise, public sector. "
+    "Chỉ xuất bản dịch, không giải thích thêm."
 )
 
 
@@ -72,6 +67,8 @@ class LlmTranslator:
         )
         self.n_batch = max(1, int(getattr(config, "LLM_N_BATCH", 512)))
         self.temperature = float(getattr(config, "LLM_TEMPERATURE", 0.1))
+        self.top_p = float(getattr(config, "LLM_TOP_P", 0.3))
+        self.frequency_penalty = float(getattr(config, "LLM_FREQUENCY_PENALTY", 0.1))
         self.max_tokens = max(1, int(getattr(config, "LLM_MAX_TOKENS", 150)))
         self.context_sentences = max(0, int(getattr(config, "LLM_CONTEXT_SENTENCES", 3)))
         self._keep_context = self.context_sentences > 0
@@ -142,25 +139,34 @@ class LlmTranslator:
         "ます": "...",
     }
 
-    # Common katakana IT terms the model consistently mistranslates
+    # Katakana IT terms → English. Used as pre-processing substitution (mid-sentence).
+    # Sorted by length (longest first) at substitution time to avoid partial matches.
     _KATAKANA_TERM_MAP = {
+        "ソリューションアーキテクト": "Solution Architect",
         "クラウドファースト": "Cloud First",
-        "クラウド": "Cloud",
+        "マイクロサービス": "microservice",
+        "パブリックセクター": "public sector",
+        "ウェブサービス": "Web Services",
         "オンプレミス": "on-premises",
-        "オンプレ": "on-premises",
-        "デプロイ": "deploy",
+        "エンタープライズ": "enterprise",
+        "マイグレーション": "migration",
+        "サーバーレス": "serverless",
+        "アーキテクト": "architect",
         "バックログ": "backlog",
         "スプリント": "sprint",
-        "アーキテクト": "architect",
-        "ソリューションアーキテクト": "Solution Architect",
-        "エンタープライズ": "enterprise",
-        "パブリックセクター": "public sector",
-        "マイグレーション": "migration",
+        "アマゾン": "Amazon",
+        "クラウド": "Cloud",
+        "オンプレ": "on-premises",
+        "デプロイ": "deploy",
         "インフラ": "infrastructure",
         "コンテナ": "container",
-        "サーバーレス": "serverless",
-        "マイクロサービス": "microservice",
     }
+
+    # CJK numeral → Arabic digit (applied before kanji stripping)
+    _CJK_NUMERAL_MAP = str.maketrans(
+        "〇一二三四五六七八九十百千万億",
+        "012345678900000",
+    )
 
     # Vietnamese diacritical characters
     _VI_DIACRITICS_RE = re.compile(r'[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]', re.IGNORECASE)
@@ -177,21 +183,32 @@ class LlmTranslator:
                 self._history.append((cleaned, filler_result))
             return filler_result
 
-        # Check short katakana IT terms (model consistently gets these wrong)
+        # Check if entire input is a single katakana IT term
         katakana_result = self._KATAKANA_TERM_MAP.get(cleaned)
         if katakana_result:
             if update_context and self._keep_context:
                 self._history.append((cleaned, katakana_result))
             return katakana_result
 
+        # Pre-process: replace known katakana IT terms with English equivalents
+        # so the LLM doesn't mistranslate them. Longest match first.
+        processed = cleaned
+        for ja_term, en_term in sorted(
+            self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0])
+        ):
+            processed = processed.replace(ja_term, en_term)
+
         try:
             with self._lock:
-                messages = self._build_messages(cleaned)
+                messages = self._build_messages(processed)
                 response = self.llm.create_chat_completion(
                     messages=messages,
                     temperature=self.temperature,
+                    top_p=self.top_p,
+                    frequency_penalty=self.frequency_penalty,
+                    presence_penalty=0.1,
                     max_tokens=self.max_tokens,
-                    stop=["\n", "JP:", "Translate", "Note:"],
+                    stop=["\n", "\n\n", "<|im_end|>"],
                 )
                 translation = self._clean_translation(self._extract_translation(response))
                 if not translation:
@@ -207,13 +224,16 @@ class LlmTranslator:
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": self.system_prompt}]
-        # Add context as few-shot examples with explicit format
+        # Inject context as plain text (avoids confusing small models with many turns)
+        context_line = ""
         if self._keep_context and self._history:
-            for jp, vi in list(self._history)[-self.context_sentences:]:
-                messages.append({"role": "user", "content": f"Translate to Vietnamese: {jp}"})
-                messages.append({"role": "assistant", "content": vi})
-        # Current sentence to translate
-        messages.append({"role": "user", "content": f"Translate to Vietnamese: {text}"})
+            recent = list(self._history)[-self.context_sentences:]
+            context_line = "".join(
+                f"(前: {jp} → {vi})\n" for jp, vi in recent
+            )
+        # Current sentence to translate — Vietnamese command biases output language
+        user_content = f"{context_line}Dịch sang tiếng Việt: {text}"
+        messages.append({"role": "user", "content": user_content})
         return messages
 
     @staticmethod
@@ -270,7 +290,7 @@ class LlmTranslator:
     @staticmethod
     def _clean_translation(text: str) -> str:
         cleaned = text.strip()
-        for prefix in ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:"):
+        for prefix in ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:", "Dịch sang tiếng Việt:"):
             if cleaned.lower().startswith(prefix.lower()):
                 cleaned = cleaned[len(prefix):].strip()
         # Take first line only
@@ -284,7 +304,11 @@ class LlmTranslator:
         # If there are a few stray Kanji, strip them out instead of rejecting
         # (model sometimes leaves 1-2 kanji in an otherwise valid translation)
         if LlmTranslator._CJK_RE.search(cleaned):
+            # Convert CJK numerals to Arabic digits before stripping
+            cleaned = cleaned.translate(LlmTranslator._CJK_NUMERAL_MAP)
             stripped = LlmTranslator._CJK_RE.sub("", cleaned).strip()
+            # Collapse multiple spaces left by removal
+            stripped = re.sub(r" {2,}", " ", stripped)
             # If removing kanji leaves >60% of original length, use the stripped version
             if len(stripped) > len(cleaned) * 0.5 and len(stripped) > 5:
                 logger.debug("Stripped stray kanji from output: %r -> %r", cleaned[:60], stripped[:60])
