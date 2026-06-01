@@ -77,6 +77,7 @@ class LlmTranslator:
             n_ctx=self.n_ctx,
             n_threads=self.n_threads,
             n_batch=self.n_batch,
+            use_mlock=bool(getattr(config, "LLM_USE_MLOCK", False)),
             verbose=False,
         )
 

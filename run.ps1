@@ -62,16 +62,22 @@ if (-not (Test-Path "models\reazonspeech-k2-v2")) {
 
 if ($Llm) {
     $env:ZT_TRANSLATOR = "llm"
-    $modelPath = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
-    if (-not (Test-Path $modelPath)) {
-        Write-Host "LLM model not found. Downloading Qwen2.5-3B..." -ForegroundColor Yellow
-        python scripts\download_qwen_model.py
-        if (($LASTEXITCODE -ne 0) -or -not (Test-Path $modelPath)) {
+    # Prefer 1.5B model (lighter, better for 16GB RAM systems); fall back to 3B
+    $model1p5b = Join-Path $PSScriptRoot "models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+    $model3b = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+    if (Test-Path $model1p5b) {
+        Write-Host "LLM translation mode active (Qwen2.5-1.5B)" -ForegroundColor Cyan
+    } elseif (Test-Path $model3b) {
+        Write-Host "LLM translation mode active (Qwen2.5-3B)" -ForegroundColor Cyan
+    } else {
+        Write-Host "LLM model not found. Downloading Qwen2.5-1.5B (~0.9GB)..." -ForegroundColor Yellow
+        python scripts\download_qwen_model.py --size 1.5b
+        if ($LASTEXITCODE -ne 0) {
             Write-Host "Failed to download LLM model." -ForegroundColor Red
             exit 1
         }
+        Write-Host "LLM translation mode active (Qwen2.5-1.5B)" -ForegroundColor Cyan
     }
-    Write-Host "LLM translation mode active (Qwen2.5-3B)" -ForegroundColor Cyan
 }
 
 # HuggingFace offline mode (no network needed after models are downloaded).

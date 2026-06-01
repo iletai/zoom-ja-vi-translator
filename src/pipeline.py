@@ -99,7 +99,8 @@ class TranslationPipeline:
 
         backend_label = "LLM/Qwen2.5" if config.TRANSLATOR_BACKEND == "llm" else "NLLB"
         self.display.info(f"Loading models (ASR + {backend_label} translator)...")
-        self.translator = self._create_translator()
+        # Load ASR first (small ~160MB) before the heavier translator so that
+        # on memory-constrained systems the combined peak stays below physical RAM.
         if self.streaming:
             from src.streaming_asr import StreamingJapaneseASR
 
@@ -107,8 +108,6 @@ class TranslationPipeline:
             self.aggregator = SentenceAggregator()
             self._last_stream_text_at = monotonic()
             if self._redecode:
-                # Hybrid: online model for live partials, offline model + VAD for
-                # the accurate text that gets translated.
                 self.asr = JapaneseASR()
                 self.segmenter = VadSegmenter()
         else:
@@ -116,6 +115,7 @@ class TranslationPipeline:
             self.segmenter = VadSegmenter()
         if self.asr is not None and config.OFFLINE_AGGREGATE_SENTENCES:
             self._offline_aggregator = SentenceAggregator()
+        self.translator = self._create_translator()
         self.display.info(f"Models ready. Translator: {config.TRANSLATOR_BACKEND.upper()}")
 
         self._capture = AudioCapture(self.device, self._audio_queue, self.stop_event)

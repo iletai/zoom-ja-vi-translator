@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import warnings
 
 # Windows console defaults to cp1252 which cannot display Japanese/Vietnamese.
 # Force UTF-8 so print() works for CJK characters.
@@ -21,6 +22,11 @@ if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# Suppress noisy soundcard "data discontinuity" warnings — they fire when the
+# audio capture thread misses a buffer (common during heavy model inference) but
+# are not actionable and clutter the output.
+warnings.filterwarnings("ignore", message="data discontinuity", module="soundcard")
 
 import config
 from src import audio_capture
