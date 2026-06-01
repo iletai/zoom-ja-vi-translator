@@ -61,15 +61,50 @@ $env:ZT_TRANSLATOR = "llm"
 $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
 
+# ─── Web dependencies ─────────────────────────────────────────────────────
+if (-not (Test-Path ".venv\.web_deps_installed")) {
+    Write-Host "==> Installing web dependencies (streamlit)..." -ForegroundColor Yellow
+    python -m pip install -r requirements-web.txt -q
+    New-Item -ItemType File -Path ".venv\.web_deps_installed" | Out-Null
+}
+
+# ─── Log file ─────────────────────────────────────────────────────────────
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$logDir = Join-Path $PSScriptRoot "test_audio\evidence"
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+$logFile = Join-Path $logDir "run_${timestamp}.jsonl"
+
 # ─── Banner ───────────────────────────────────────────────────────────────
 $modelName = if (Test-Path $model1p5b) { "Qwen2.5-1.5B" } else { "Qwen2.5-3B" }
 Write-Host ""
-Write-Host "  Zoom JA->VI Translator [Qwen LLM]" -ForegroundColor Cyan
-Write-Host "  ───────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  Model : $modelName (Q4_K_M, context-aware)" -ForegroundColor White
-Write-Host "  ASR   : ReazonSpeech k2-v2 + IT hotwords" -ForegroundColor White
-Write-Host "  Audio : System audio (WASAPI loopback)" -ForegroundColor White
+Write-Host "  ╔═══════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "  ║  Zoom JA→VI Translator [Qwen LLM]    ║" -ForegroundColor Cyan
+Write-Host "  ╚═══════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Model     : $modelName (Q4_K_M, context-aware)" -ForegroundColor White
+Write-Host "  ASR       : ReazonSpeech k2-v2 + IT hotwords" -ForegroundColor White
+Write-Host "  Audio     : System audio (WASAPI loopback)" -ForegroundColor White
+Write-Host "  Log       : $logFile" -ForegroundColor DarkGray
+Write-Host "  Dashboard : http://localhost:8501" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Press Ctrl+C to stop." -ForegroundColor DarkGray
 Write-Host ""
 
-# ─── Run ──────────────────────────────────────────────────────────────────
-python main.py --system-audio --log
+# ─── Launch translator (background) ──────────────────────────────────────
+$translatorJob = Start-Process -FilePath "python" `
+    -ArgumentList @("main.py", "--system-audio", "--log", $logFile) `
+    -NoNewWindow -PassThru
+
+Write-Host "  [PID $($translatorJob.Id)] Translator started" -ForegroundColor Green
+Start-Sleep -Seconds 3
+
+# ─── Launch Streamlit (foreground) ────────────────────────────────────────
+try {
+    streamlit run webui\streamlit_app.py --server.port 8501
+} finally {
+    if (-not $translatorJob.HasExited) {
+        Write-Host "`n  Stopping translator (PID $($translatorJob.Id))..." -ForegroundColor Yellow
+        Stop-Process -Id $translatorJob.Id -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "  Done. Log: $logFile" -ForegroundColor Green
+}
