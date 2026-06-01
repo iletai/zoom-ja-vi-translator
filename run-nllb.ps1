@@ -4,8 +4,13 @@
 # NLLB-600M: dịch nhanh nhưng không có ngữ cảnh giữa các câu.
 # RAM: ~600MB (model) + ~160MB (ASR) = ~760MB tổng cộng.
 
+# Cho phép chạy script khi right-click "Run with PowerShell"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
+
+try {
 
 # ─── UTF-8 ────────────────────────────────────────────────────────────────
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -95,3 +100,15 @@ try {
     }
     Write-Host "  Done. Log: $logFile" -ForegroundColor Green
 }
+
+} catch {
+    Write-Host ""
+    Write-Host "  ERROR: $_" -ForegroundColor Red
+    Write-Host "  $($_.ScriptStackTrace)" -ForegroundColor DarkGray
+    Write-Host ""
+}
+
+# Giữ cửa sổ mở (cho right-click "Run with PowerShell")
+Write-Host ""
+Write-Host "  Press any key to close..." -ForegroundColor DarkGray
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

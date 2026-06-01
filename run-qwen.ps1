@@ -4,8 +4,13 @@
 # Qwen2.5-1.5B: dịch có ngữ cảnh, hiểu thuật ngữ IT tốt hơn NLLB.
 # RAM: ~1.1GB (model) + ~160MB (ASR) = ~1.3GB tổng cộng.
 
+# Cho phép chạy script khi right-click "Run with PowerShell"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
+
+try {
 
 # ─── UTF-8 ────────────────────────────────────────────────────────────────
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -108,3 +113,15 @@ try {
     }
     Write-Host "  Done. Log: $logFile" -ForegroundColor Green
 }
+
+} catch {
+    Write-Host ""
+    Write-Host "  ERROR: $_" -ForegroundColor Red
+    Write-Host "  $($_.ScriptStackTrace)" -ForegroundColor DarkGray
+    Write-Host ""
+}
+
+# Giữ cửa sổ mở (cho right-click "Run with PowerShell")
+Write-Host ""
+Write-Host "  Press any key to close..." -ForegroundColor DarkGray
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
