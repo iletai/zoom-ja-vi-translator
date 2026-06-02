@@ -367,6 +367,7 @@ class LlmTranslator:
                     stop=["\n", "<|im_end|>", "JA:", "JP:", "\nJA:", " Here ", " This is", "I am", "I will", "Let me"],
                 )
                 raw_text = response["choices"][0]["text"] if response.get("choices") else ""
+                logger.debug("LLM raw output for %r: %r", cleaned[:40], raw_text[:120])
                 translation = self._clean_translation(raw_text)
                 # Reject if translation is absurdly long relative to source.
                 # Short Japanese inputs can legitimately expand much more in Vietnamese.

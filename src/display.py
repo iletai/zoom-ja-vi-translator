@@ -1,6 +1,7 @@
 """Terminal display for bilingual Japanese/Vietnamese subtitles."""
 from __future__ import annotations
 
+import logging
 import shutil
 import sys
 import threading
@@ -8,6 +9,8 @@ import time
 import unicodedata
 
 import config
+
+logger = logging.getLogger(__name__)
 
 # ANSI colors — disabled automatically when output is not a TTY.
 _RESET = "\033[0m"
@@ -92,6 +95,7 @@ class SubtitleDisplay:
 
     def show(self, japanese: str, vietnamese: str) -> None:
         """Print one timestamped Japanese -> Vietnamese subtitle pair (one-shot)."""
+        logger.info("JP: %s | VI: %s", japanese, vietnamese)
         timestamp = time.strftime("%H:%M:%S")
         header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
         jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
@@ -102,6 +106,7 @@ class SubtitleDisplay:
 
     def show_pair(self, japanese: str, vietnamese: str) -> None:
         """Atomically print one committed Japanese -> Vietnamese subtitle pair."""
+        logger.info("JP: %s | VI: %s", japanese, vietnamese)
         timestamp = time.strftime("%H:%M:%S")
         header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
         jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
@@ -112,15 +117,8 @@ class SubtitleDisplay:
             self._last_source_seq = None
 
     def show_source(self, japanese: str, seq: int | None = None) -> None:
-        """Print the recognized Japanese immediately, before translation is ready.
-
-        Showing the source line as soon as ASR completes drastically cuts the
-        *perceived* latency in a live meeting: the viewer sees what was just said
-        within ~2 s, then the Vietnamese line follows when the translator finishes.
-        ``seq`` identifies this source so the matching ``show_target`` can detect
-        whether another source was printed in between (batching) and, if so,
-        reprint the pair together instead of attaching VI under the wrong JP.
-        """
+        """Print the recognized Japanese immediately, before translation is ready."""
+        logger.info("ASR: %s (seq=%s)", japanese, seq)
         timestamp = time.strftime("%H:%M:%S")
         header = self._wrap(f"[{timestamp}]", _DIM) if self._color else f"[{timestamp}]"
         jp_line = "  " + self._wrap(f"JP {japanese}", _JP_COLOR)
@@ -131,15 +129,8 @@ class SubtitleDisplay:
     def show_target(
         self, vietnamese: str, japanese: str | None = None, seq: int | None = None
     ) -> None:
-        """Print the Vietnamese line for a previously shown source utterance.
-
-        If this target still directly follows its own source line (``seq`` matches
-        the last source printed), the VI line is appended inline. Otherwise another
-        source was printed in between (translation batching), so the whole JP/VI
-        pair is reprinted together to avoid attaching VI under the wrong JP. When
-        ``seq``/``japanese`` are omitted (cloud backend) the legacy inline
-        behaviour is preserved.
-        """
+        """Print the Vietnamese line for a previously shown source utterance."""
+        logger.info("VI: %s (seq=%s)", vietnamese, seq)
         vi_line = "  " + self._wrap(f"VI {vietnamese}", _VI_COLOR)
         with self._lock:
             superseded = (
@@ -211,6 +202,7 @@ class SubtitleDisplay:
 
     def info(self, message: str) -> None:
         """Print a status/diagnostic line."""
+        logger.info(message)
         with self._lock:
             text = self._wrap(message, _DIM) if self._color else message
             print(f"{self._clear_partial()}{text}", flush=True)

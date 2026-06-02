@@ -10,6 +10,7 @@ Run from the project root:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 import warnings
@@ -164,6 +165,42 @@ def _configure_evidence_log(args: argparse.Namespace, display: SubtitleDisplay):
     return resolved
 
 
+def _configure_file_logging(log_path: str | None) -> None:
+    """Set up Python logging to write all warnings/errors to a .log file.
+
+    The log file is placed alongside the evidence JSONL (same name, .log ext).
+    If no evidence log path is set, uses a default timestamped file.
+    """
+    import pathlib
+    import time
+
+    if log_path:
+        log_file = pathlib.Path(log_path).with_suffix(".log")
+    else:
+        evidence_dir = config.PROJECT_ROOT / "test_audio" / "evidence"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        log_file = evidence_dir / f"run_{time.strftime('%Y%m%d_%H%M%S')}.log"
+
+    # Configure root logger: DEBUG+ to file, WARNING+ to stderr
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    # File handler — capture everything (DEBUG+)
+    fh = logging.FileHandler(str(log_file), encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    root.addHandler(fh)
+
+    # Console handler — only WARNING+ (keeps terminal clean for subtitle output)
+    ch = logging.StreamHandler(sys.stderr)
+    ch.setLevel(logging.WARNING)
+    ch.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    root.addHandler(ch)
+
+
 def _save_transcript(log_path, display: SubtitleDisplay) -> None:
     """Write a bilingual transcript (.txt + .srt) next to the evidence log.
 
@@ -202,6 +239,7 @@ def main() -> int:
         return 0
 
     _log_path = _configure_evidence_log(args, display)
+    _configure_file_logging(_log_path)
     from src import evidence_log
 
     try:
