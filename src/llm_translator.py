@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 _DEFAULT_SYSTEM_PROMPT = (
     "Bạn là máy dịch Nhật→Việt chuyên IT. "
     "Nhận tiếng Nhật, xuất ĐÚNG MỘT DÒNG tiếng Việt, không thêm gì khác. "
-    "Giữ nguyên: Cloud, AWS, API, deploy, sprint, IoT, AI, EC2, S3, Lambda. "
+    "Giữ nguyên: Cloud, AWS, API, deploy, sprint, IoT, AI, EC2, S3, Lambda. các thuật ngữ trong ngành IT."
     "Tên riêng giữ romaji: Tokyo, Shibuya, Akihabara."
+    "Bạn tuyệt đối phải trả lời với độ chính xác cao, tin cậy tránh phản hồi sai xót ngoài ngôn ngữ được định nghĩa."
 )
 
 
@@ -662,6 +663,14 @@ class LlmTranslator:
     _JP_KANA_RE = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
     # CJK Unified Ideographs (Kanji - shared with Chinese/Vietnamese)
     _CJK_RE = re.compile(r'[\u4E00-\u9FFF]')
+    # Thai script (U+0E00-U+0E7F)
+    _THAI_RE = re.compile(r'[\u0E00-\u0E7F]')
+    # Korean Hangul (syllables + jamo + compatibility jamo)
+    _HANGUL_RE = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]')
+    # Arabic script
+    _ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
+    # Devanagari / Hindi
+    _DEVANAGARI_RE = re.compile(r'[\u0900-\u097F]')
 
     @staticmethod
     def _is_likely_english(text: str) -> bool:
@@ -822,6 +831,19 @@ class LlmTranslator:
                 # All lines are preambles/refusals
                 return ""
         cleaned = cleaned.strip("`'\" ")
+        # Reject if output contains wrong-language scripts
+        if LlmTranslator._THAI_RE.search(cleaned):
+            logger.warning("LLM output contains Thai script, rejecting: %r", cleaned[:80])
+            return ""
+        if LlmTranslator._HANGUL_RE.search(cleaned):
+            logger.warning("LLM output contains Korean/Hangul, rejecting: %r", cleaned[:80])
+            return ""
+        if LlmTranslator._ARABIC_RE.search(cleaned):
+            logger.warning("LLM output contains Arabic script, rejecting: %r", cleaned[:80])
+            return ""
+        if LlmTranslator._DEVANAGARI_RE.search(cleaned):
+            logger.warning("LLM output contains Devanagari script, rejecting: %r", cleaned[:80])
+            return ""
         # Reject if output contains Hiragana/Katakana (definitely JP, not translation)
         if LlmTranslator._JP_KANA_RE.search(cleaned):
             logger.warning("LLM output contains Japanese kana, rejecting: %r", cleaned[:80])

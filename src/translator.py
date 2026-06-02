@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 from typing import Optional
 
 import ctranslate2
@@ -12,6 +13,42 @@ import config
 from src.sentence_aggregator import split_japanese_sentences
 
 logger = logging.getLogger(__name__)
+
+# ─── Wrong-language detection for NLLB output validation ─────────────────
+# NLLB is a massive multilingual model that can occasionally "leak" into Thai,
+# Korean, or other scripts when the source is ambiguous or very short.
+_THAI_RE = re.compile(r'[\u0E00-\u0E7F]')
+_HANGUL_RE = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]')
+_JP_KANA_RE = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
+_ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
+_DEVANAGARI_RE = re.compile(r'[\u0900-\u097F]')
+
+
+def _validate_vietnamese_output(text: str) -> str:
+    """Return the text if it looks like Vietnamese, otherwise return empty string.
+
+    Vietnamese uses Latin script with diacritics. If the output contains Thai,
+    Korean, Japanese kana, Arabic, or Devanagari characters, it's a wrong-language
+    leak from the multilingual model.
+    """
+    if not text:
+        return text
+    if _THAI_RE.search(text):
+        logger.warning("NLLB output contains Thai script, rejecting: %r", text[:80])
+        return ""
+    if _HANGUL_RE.search(text):
+        logger.warning("NLLB output contains Korean/Hangul, rejecting: %r", text[:80])
+        return ""
+    if _JP_KANA_RE.search(text):
+        logger.warning("NLLB output contains Japanese kana, rejecting: %r", text[:80])
+        return ""
+    if _ARABIC_RE.search(text):
+        logger.warning("NLLB output contains Arabic script, rejecting: %r", text[:80])
+        return ""
+    if _DEVANAGARI_RE.search(text):
+        logger.warning("NLLB output contains Devanagari script, rejecting: %r", text[:80])
+        return ""
+    return text
 
 
 def join_translations(sources, translations):
@@ -133,6 +170,32 @@ class NllbTranslator:
             )
             decoded = [self._decode(result) for result in results]
 
+            # Retry items that failed validation (wrong-language output) with
+            # a higher beam size to give the model a better chance.
+            retry_indices = [i for i, d in enumerate(decoded) if not d and batch_tokens[i]]
+            if retry_indices:
+                retry_tokens = [batch_tokens[i] for i in retry_indices]
+                retry_beam = min(config.NLLB_BEAM_SIZE * 2, 10)
+                logger.info(
+                    "Retrying %d item(s) with beam_size=%d after wrong-language rejection",
+                    len(retry_indices), retry_beam,
+                )
+                retry_results = self.translator.translate_batch(
+                    retry_tokens,
+                    target_prefix=[[config.NLLB_TARGET_LANG]] * len(retry_tokens),
+                    beam_size=retry_beam,
+                    repetition_penalty=config.NLLB_REPETITION_PENALTY + 0.1,
+                    no_repeat_ngram_size=config.NLLB_NO_REPEAT_NGRAM_SIZE,
+                    min_decoding_length=config.NLLB_MIN_DECODING_LENGTH,
+                    max_decoding_length=config.NLLB_MAX_DECODING_LENGTH,
+                    max_input_length=config.NLLB_MAX_INPUT_LENGTH,
+                )
+                for j, retry_result in enumerate(retry_results):
+                    retried = self._decode(retry_result)
+                    if retried:
+                        decoded[retry_indices[j]] = retried
+                        logger.info("Retry succeeded for item %d", retry_indices[j])
+
         out: list[str] = []
         cursor = 0
         for source_tokens in prepared:
@@ -155,7 +218,8 @@ class NllbTranslator:
         if target_tokens and target_tokens[0] == config.NLLB_TARGET_LANG:
             target_tokens = target_tokens[1:]
         target_ids = self.tokenizer.convert_tokens_to_ids(target_tokens)
-        return self.tokenizer.decode(target_ids)
+        text = self.tokenizer.decode(target_ids)
+        return _validate_vietnamese_output(text)
 
     def warmup(self) -> None:
         """Run one tiny translation to avoid first-call lag."""
