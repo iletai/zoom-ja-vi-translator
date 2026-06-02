@@ -323,21 +323,21 @@ NLLB_CT2_HF_REVISION = os.environ.get("NLLB_CT2_HF_REVISION", "main")
 # ─── LLM Translation (Qwen2.5-3B via llama-cpp-python, opt-in) ───────────
 # Alternative to NLLB for higher-quality context-aware translation.
 # Activate with ZT_TRANSLATOR=llm or --llm flag.
-# Auto-detect model: prefer 1.5B (lighter, faster on ≤16GB RAM systems) if present,
-# otherwise fall back to 3B. Override with ZT_LLM_MODEL env var.
+# Auto-detect model: prefer 3B (better translation quality ~30%) if present,
+# otherwise fall back to 1.5B. Override with ZT_LLM_MODEL env var.
 _LLM_1P5B_DIR = MODELS_DIR / "qwen2.5-1.5b-instruct"
 _LLM_3B_DIR = MODELS_DIR / "qwen2.5-3b-instruct"
 _LLM_1P5B_FILE = _LLM_1P5B_DIR / "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
 _LLM_3B_FILE = _LLM_3B_DIR / "Qwen2.5-3B-Instruct-Q4_K_M.gguf"
-# Pick whichever model exists; prefer 1.5B for RAM-constrained machines.
-if _LLM_1P5B_FILE.is_file():
-    _LLM_DEFAULT_MODEL = _LLM_1P5B_FILE
-    LLM_MODEL_DIR = _LLM_1P5B_DIR
-else:
+# Pick whichever model exists; prefer 3B for better accuracy.
+if _LLM_3B_FILE.is_file():
     _LLM_DEFAULT_MODEL = _LLM_3B_FILE
     LLM_MODEL_DIR = _LLM_3B_DIR
+else:
+    _LLM_DEFAULT_MODEL = _LLM_1P5B_FILE
+    LLM_MODEL_DIR = _LLM_1P5B_DIR
 LLM_MODEL_PATH = Path(os.environ.get("ZT_LLM_MODEL", str(_LLM_DEFAULT_MODEL)))
-LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "768"))
+LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "1024"))
 # Reserve 2 cores for audio capture + ASR; give the rest to LLM.
 LLM_N_THREADS = int(os.environ.get("ZT_LLM_THREADS", str(max(2, _PHYSICAL_CORES - 2))))
 LLM_N_BATCH = int(os.environ.get("ZT_LLM_BATCH", "512"))
