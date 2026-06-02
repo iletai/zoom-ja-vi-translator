@@ -50,6 +50,20 @@ def test_clean_translation_keeps_non_meta_colons() -> None:
     assert LlmTranslator._clean_translation(text) == "Lúc 10:30 hệ thống bắt đầu"
 
 
+def test_clean_translation_rejects_short_english_output() -> None:
+    assert LlmTranslator._clean_translation("Hello everyone.") == ""
+    assert LlmTranslator._clean_translation("Yes, it's difficult.") == ""
+
+
+def test_clean_translation_keeps_single_it_term() -> None:
+    assert LlmTranslator._clean_translation("Cloud") == "Cloud"
+    assert LlmTranslator._clean_translation("API") == "API"
+
+
+def test_clean_translation_keeps_short_unaccented_vietnamese() -> None:
+    assert LlmTranslator._clean_translation("cho con") == "cho con"
+
+
 def test_translate_one_replaces_proper_nouns_after_katakana_preprocessing() -> None:
     translator, dummy_llm = _make_translator()
 
@@ -57,7 +71,8 @@ def test_translate_one_replaces_proper_nouns_after_katakana_preprocessing() -> N
 
     assert result == "Bản dịch thử"
     assert dummy_llm.messages is not None
-    assert (
-        dummy_llm.messages[-1]["content"]
-        == "JA: Technology社はAkihabaraに本社があり"
-    )
+    assert dummy_llm.messages[-2] == {
+        "role": "user",
+        "content": "JA: Technology社はAkihabaraに本社があり",
+    }
+    assert dummy_llm.messages[-1] == {"role": "assistant", "content": "VI:"}

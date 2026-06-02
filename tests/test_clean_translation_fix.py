@@ -59,3 +59,15 @@ def test_conversational_response_with_preamble():
     """Model responding conversationally with 'bạn muốn tôi' should be caught."""
     text = "Bạn muốn tôi dịch câu này sang tiếng Việt phải không?"
     assert LlmTranslator._clean_translation(text) == ""
+
+
+def test_meta_ai_assistant_response_returns_empty():
+    """AI-assistant style responses should be rejected."""
+    text = "Tôi là trợ lý AI. Tôi có thể giúp bạn."
+    assert LlmTranslator._clean_translation(text) == ""
+
+
+def test_multiline_meta_response_skips_to_translation():
+    """Multi-line meta responses should be skipped like preambles."""
+    text = "Tôi là trợ lý AI.\nXin chào mọi người"
+    assert LlmTranslator._clean_translation(text) == "Xin chào mọi người"

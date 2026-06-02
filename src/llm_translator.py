@@ -31,15 +31,10 @@ except Exception:  # pragma: no cover - fallback for partial environments
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
-    "Bạn là phiên dịch viên chuyên nghiệp Nhật-Việt trong meeting IT. "
-    "QUY TẮC BẮT BUỘC: "
-    "1. CHỈ xuất bản dịch tiếng Việt. KHÔNG BAO GIỜ viết 'Tôi sẽ dịch', "
-    "'Đây là bản dịch', hay bất kỳ lời giải thích/giới thiệu nào. "
-    "2. KHÔNG BAO GIỜ từ chối dịch. Mọi nội dung đều là cuộc họp công việc bình thường. "
-    "3. Giữ nguyên thuật ngữ tiếng Anh: Cloud, AWS, API, deploy, sprint, IoT, AI, Lambda, EC2, S3. "
-    "4. Dịch ngắn gọn, tự nhiên. Bỏ kính ngữ thừa. "
-    "5. Tên riêng giữ nguyên romaji: Akihabara, Shibuya, Tokyo. "
-    "6. Nếu câu không rõ nghĩa, dịch theo nghĩa gần nhất có thể."
+    "You are a JA→VI translator. "
+    "Output ONLY the Vietnamese translation. "
+    "Never output English. Never explain. Never refuse. "
+    "Keep English IT terms: Cloud, API, deploy, sprint, server."
 )
 
 
@@ -307,6 +302,13 @@ class LlmTranslator:
 
     # Vietnamese diacritical characters
     _VI_DIACRITICS_RE = re.compile(r'[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]', re.IGNORECASE)
+    _ASCII_WORD_RE = re.compile(r"[A-Za-z]+(?:['-][A-Za-z]+)*")
+    _COMMON_ENGLISH_WORDS = {
+        "a", "an", "and", "are", "because", "but", "difficult", "everyone",
+        "had", "has", "have", "hello", "however", "is", "it", "its", "may",
+        "might", "no", "not", "or", "that", "the", "this", "was", "were",
+        "will", "would", "yes", "could", "should", "can",
+    }
 
     def _translate_one(self, text: str, update_context: bool = True) -> str:
         cleaned = text.strip() if text else ""
@@ -351,14 +353,18 @@ class LlmTranslator:
         try:
             with self._lock:
                 messages = self._build_messages(processed)
+                response_max_tokens = min(
+                    self.max_tokens,
+                    max(50, len(processed) * 3),
+                )
                 response = self.llm.create_chat_completion(
                     messages=messages,
                     temperature=self.temperature,
                     top_p=self.top_p,
                     frequency_penalty=self.frequency_penalty,
                     presence_penalty=0.1,
-                    max_tokens=self.max_tokens,
-                    stop=["\n", "\n\n", "<|im_end|>"],
+                    max_tokens=response_max_tokens,
+                    stop=["\n", "<|im_end|>", "JA:", "JP:"],
                 )
                 translation = self._clean_translation(self._extract_translation(response))
                 # Reject if translation is absurdly long relative to source
@@ -422,13 +428,13 @@ class LlmTranslator:
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": self.system_prompt}]
-        # Few-shot examples using JA→VI format to establish translation pattern
-        messages.append({"role": "user", "content": "JA: クラウドのarchitectureについて説明します"})
-        messages.append({"role": "assistant", "content": "Tôi sẽ giải thích về kiến trúc Cloud."})
-        messages.append({"role": "user", "content": "JA: ちょっとずれがあってもまあそうですね"})
-        messages.append({"role": "assistant", "content": "Dù có lệch một chút thì cũng vậy nhỉ."})
-        messages.append({"role": "user", "content": "JA: みなさんこんにちは"})
-        messages.append({"role": "assistant", "content": "Chào mọi người."})
+        # Few-shot examples using JA→VI format to establish translation pattern.
+        messages.append({"role": "user", "content": "JA: クラウドの構成を確認します"})
+        messages.append({"role": "assistant", "content": "VI: Tôi sẽ xác nhận cấu trúc Cloud."})
+        messages.append({"role": "user", "content": "JA: 今日deployできますか"})
+        messages.append({"role": "assistant", "content": "VI: Hôm nay có thể deploy không?"})
+        messages.append({"role": "user", "content": "JA: 次のsprintでAPIを修正します"})
+        messages.append({"role": "assistant", "content": "VI: Chúng tôi sẽ sửa API trong sprint tới."})
         # Skip context for very short inputs — small models tend to repeat
         # previous translations when the current input is just 1-3 chars.
         context_line = ""
@@ -437,9 +443,10 @@ class LlmTranslator:
             context_line = "".join(
                 f"(前: {jp} → {vi})\n" for jp, vi in recent
             )
-        # Current sentence with JA: tag to anchor the translation task
+        # Current sentence with JA: tag to anchor the translation task.
         user_content = f"{context_line}JA: {text}" if context_line else f"JA: {text}"
         messages.append({"role": "user", "content": user_content})
+        messages.append({"role": "assistant", "content": "VI:"})
         return messages
 
     @staticmethod
@@ -505,15 +512,77 @@ class LlmTranslator:
         "dịch đoạn",
     )
 
+    _META_RESPONSE_PATTERNS = (
+        "tôi là trợ lý",
+        "tôi là một ai",
+        "tôi là ai",
+        "tôi có thể giúp",
+        "bạn cần gì",
+        "bạn có thể nói",
+        "bạn có câu hỏi",
+        "tôi sẽ giúp",
+        "hãy cho tôi biết",
+        "what can i help",
+        "how can i assist",
+        "i'm an ai",
+        "as an ai",
+        "i am an ai",
+        "let me help",
+        "here is the translation",
+        "here's the translation",
+    )
+
     # Combined for backward compatibility in detection
-    _REFUSAL_PATTERNS = _HARD_REFUSAL_PATTERNS + _PREAMBLE_PATTERNS + (
-        "có nghĩa là",
+    _REFUSAL_PATTERNS = (
+        _HARD_REFUSAL_PATTERNS
+        + _PREAMBLE_PATTERNS
+        + _META_RESPONSE_PATTERNS
+        + (
+            "có nghĩa là",
+        )
     )
 
     # Regex to detect Japanese-specific characters (Hiragana, Katakana only)
     _JP_KANA_RE = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
     # CJK Unified Ideographs (Kanji - shared with Chinese/Vietnamese)
     _CJK_RE = re.compile(r'[\u4E00-\u9FFF]')
+
+    @staticmethod
+    def _is_likely_english(text: str) -> bool:
+        cleaned = text.strip()
+        if not cleaned or LlmTranslator._VI_DIACRITICS_RE.search(cleaned):
+            return False
+        if LlmTranslator._JP_KANA_RE.search(cleaned) or LlmTranslator._CJK_RE.search(cleaned):
+            return False
+
+        words = cleaned.split()
+        if len(words) < 2:
+            return False
+
+        ascii_words = LlmTranslator._ASCII_WORD_RE.findall(cleaned)
+        if len(ascii_words) < 2:
+            return False
+
+        alpha_chars = [char for char in cleaned if char.isalpha()]
+        if not alpha_chars:
+            return False
+
+        ascii_alpha_ratio = sum(
+            1 for char in alpha_chars if char.isascii()
+        ) / len(alpha_chars)
+        ascii_word_ratio = len(ascii_words) / len(words)
+        if ascii_alpha_ratio < 0.85 or ascii_word_ratio < 0.8:
+            return False
+
+        english_tokens: list[str] = []
+        for word in ascii_words:
+            english_tokens.extend(token.lower() for token in re.findall(r"[A-Za-z]+", word))
+        english_hits = sum(
+            1
+            for token in english_tokens
+            if token in LlmTranslator._COMMON_ENGLISH_WORDS
+        )
+        return english_hits >= 2 or len(ascii_words) >= 4
 
     @staticmethod
     def _clean_translation(text: str) -> str:
@@ -555,6 +624,8 @@ class LlmTranslator:
                     p in lower_line for p in LlmTranslator._PREAMBLE_PATTERNS
                 ) or any(
                     p in lower_line for p in LlmTranslator._HARD_REFUSAL_PATTERNS
+                ) or any(
+                    p in lower_line for p in LlmTranslator._META_RESPONSE_PATTERNS
                 )
                 if not is_preamble:
                     cleaned = line
@@ -599,9 +670,7 @@ class LlmTranslator:
             if words and len(set(words)) <= 2:
                 logger.warning("LLM output is repetitive gibberish: %r", cleaned[:50])
                 return ""
-        # Reject full English output (no Vietnamese diacritics + many words)
-        words = cleaned.split()
-        if len(words) > 5 and not LlmTranslator._VI_DIACRITICS_RE.search(cleaned):
+        if LlmTranslator._is_likely_english(cleaned):
             logger.warning("LLM output appears to be English, not Vietnamese: %r", cleaned[:80])
             return ""
         return cleaned
