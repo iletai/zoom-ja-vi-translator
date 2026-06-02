@@ -417,7 +417,8 @@ class LlmTranslator:
                     top_p=self.top_p,
                     frequency_penalty=self.frequency_penalty,
                     repeat_penalty=1.1,
-                    stop=["\n", "<|im_end|>", "JA:", "JP:", "\nJA:", " Here ", " This is", "I am", "I will", "Let me"],
+                    stop=["\n", "<|im_end|>", "JA:", "JP:", "\nJA:", " Here ", " This is", "I am", "I will", "Let me",
+                          "的", "是", "了", "在", "不", "我们"],
                 )
                 raw_text = response["choices"][0]["text"] if response.get("choices") else ""
                 logger.debug("LLM raw output for %r: %r", cleaned[:40], raw_text[:120])
@@ -433,7 +434,8 @@ class LlmTranslator:
                 if not translation:
                     retry_prompt = (
                         "<|im_start|>system\n"
-                        "Máy dịch Nhật→Việt. Chỉ xuất bản dịch tiếng Việt.<|im_end|>\n"
+                        "Máy dịch Nhật→Việt. Chỉ xuất bản dịch tiếng Việt. "
+                        "TUYỆT ĐỐI KHÔNG dùng tiếng Trung.<|im_end|>\n"
                         "<|im_start|>user\n"
                         f"JA: {processed}<|im_end|>\n"
                         "<|im_start|>assistant\n"
@@ -442,11 +444,12 @@ class LlmTranslator:
                     retry_response = self.llm.create_completion(
                         prompt=retry_prompt,
                         max_tokens=dynamic_max_tokens,
-                        temperature=0.4,
-                        top_p=0.6,
+                        temperature=0.3,
+                        top_p=0.5,
                         frequency_penalty=0.2,
-                        repeat_penalty=1.15,
-                        stop=["<|im_end|>", "\n\n", "JA:", "JP:", " Here ", " This is", "I am", "I will", "Let me"],
+                        repeat_penalty=1.2,
+                        stop=["<|im_end|>", "\n\n", "JA:", "JP:", " Here ", " This is", "I am", "I will", "Let me",
+                              "的", "是", "了", "在", "不", "我们"],
                     )
                     raw_retry = (
                         retry_response["choices"][0]["text"]
