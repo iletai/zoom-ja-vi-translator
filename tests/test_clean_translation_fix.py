@@ -44,6 +44,18 @@ def test_leading_english_word_is_stripped_from_vietnamese_output():
     assert LlmTranslator._clean_translation(text) == "tình hình trở nên khó khăn"
 
 
+def test_leading_english_phrase_is_stripped_from_vietnamese_output():
+    """Multiple leading English words should be stripped when Vietnamese follows."""
+    text = "picks up the new layer ones, bất kể cái gì đó"
+    assert LlmTranslator._clean_translation(text) == "bất kể cái gì đó"
+
+
+def test_lowercase_leading_english_word_is_stripped_from_vietnamese_output():
+    """Lowercase English words should be stripped if the remainder is Vietnamese."""
+    text = "schedules như vậy đang được sử dụng."
+    assert LlmTranslator._clean_translation(text) == "như vậy đang được sử dụng."
+
+
 def test_sensitive_content_refusal():
     """LLM claiming sensitive content should be rejected."""
     text = "Nội dung nhạy cảm và không phù hợp"

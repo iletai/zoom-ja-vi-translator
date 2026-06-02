@@ -362,6 +362,14 @@ class LlmTranslator:
         "unfortunately", "however", "but", "well", "so", "yes", "no",
         "okay", "actually", "basically", "honestly", "also", "and",
     }
+    _UOC_BIAS_PREFIXES = (
+        "Ước mơ là ",
+        "Ước mơ ",
+        "Ước mong là ",
+        "Ước mong ",
+        "Ước gì ",
+    )
+    _LITERAL_UOC_SOURCE_HINTS = ("夢", "ゆめ", "願望", "願う", "願って", "祈り", "祈る")
 
     def _translate_one(self, text: str, update_context: bool = True) -> str:
         cleaned = text.strip() if text else ""
@@ -370,6 +378,12 @@ class LlmTranslator:
 
         # Check filler words first (no LLM needed)
         filler_result = self._FILLER_MAP.get(cleaned)
+        # Prefix match for truncated fillers (ASR sometimes cuts final す/した)
+        if not filler_result:
+            for filler_key, filler_val in self._FILLER_MAP.items():
+                if filler_key.startswith(cleaned) and len(cleaned) >= len(filler_key) - 2:
+                    filler_result = filler_val
+                    break
         if filler_result:
             if update_context and self._keep_context:
                 self._history.append((cleaned, filler_result))
@@ -422,7 +436,7 @@ class LlmTranslator:
                 )
                 raw_text = response["choices"][0]["text"] if response.get("choices") else ""
                 logger.debug("LLM raw output for %r: %r", cleaned[:40], raw_text[:120])
-                translation = self._clean_translation(raw_text)
+                translation = self._fix_uoc_bias(cleaned, self._clean_translation(raw_text))
                 # Reject if translation is absurdly long relative to source.
                 # Short Japanese inputs can legitimately expand much more in Vietnamese.
                 if translation and len(translation) > max(120, len(cleaned) * 6):
@@ -456,7 +470,7 @@ class LlmTranslator:
                         if retry_response.get("choices")
                         else ""
                     )
-                    translation = self._clean_translation(raw_retry)
+                    translation = self._fix_uoc_bias(cleaned, self._clean_translation(raw_retry))
                     # Length ratio check for retry too
                     if translation and len(translation) > max(120, len(cleaned) * 6):
                         logger.warning(
@@ -688,6 +702,33 @@ class LlmTranslator:
 
     @staticmethod
     def _strip_leading_english_word(text: str) -> str:
+        """Strip leading English words/phrases from otherwise-Vietnamese output."""
+        # Try stripping multiple leading English words (up to 8)
+        words = text.split()
+        if len(words) >= 2:
+            # Find where Vietnamese starts (first word with Vietnamese diacritics or non-ASCII)
+            vi_start = 0
+            for i, word in enumerate(words[:8]):  # check first 8 words max
+                stripped_word = word.rstrip('.,;:!?')
+                # If word is purely ASCII and looks English, continue
+                if stripped_word.isascii() and stripped_word.isalpha():
+                    vi_start = i + 1
+                else:
+                    break
+
+            if vi_start:
+                leading_words = [word.rstrip('.,;:!?') for word in words[:vi_start]]
+                should_strip = vi_start >= 2
+                if vi_start == 1 and leading_words:
+                    lead = leading_words[0]
+                    should_strip = lead.lower() in LlmTranslator._LEADING_ENGLISH or (
+                        lead.islower() and len(lead) > 4
+                    )
+                if should_strip:
+                    rest = ' '.join(words[vi_start:]).lstrip(' ,').strip()
+                    if rest and LlmTranslator._VI_DIACRITICS_RE.search(rest):
+                        return rest
+
         match = re.match(r"^([A-Za-z]+)(?:,\s*|\s+)(.+)$", text)
         if not match:
             return text
@@ -700,6 +741,36 @@ class LlmTranslator:
         if not rest or not LlmTranslator._VI_DIACRITICS_RE.search(rest):
             return text
         return rest
+
+    @staticmethod
+    def _normalize_sentence_start(text: str, *, capitalize: bool) -> str:
+        if not text:
+            return text
+        head = text[0].upper() if capitalize else text[0].lower()
+        return head + text[1:]
+
+    @classmethod
+    def _fix_uoc_bias(cls, source: str, translation: str) -> str:
+        cleaned_source = source.strip() if source else ""
+        cleaned_translation = translation.strip() if translation else ""
+        if not cleaned_translation or len(cleaned_source) <= 10:
+            return cleaned_translation
+        if any(marker in cleaned_source for marker in cls._LITERAL_UOC_SOURCE_HINTS):
+            return cleaned_translation
+
+        for prefix in cls._UOC_BIAS_PREFIXES:
+            if not cleaned_translation.startswith(prefix):
+                continue
+            rest = cleaned_translation[len(prefix):].strip()
+            if not rest:
+                return cleaned_translation
+            if "希望" in cleaned_source:
+                fixed = f"Hi vọng {cls._normalize_sentence_start(rest, capitalize=False)}"
+            else:
+                fixed = cls._normalize_sentence_start(rest, capitalize=True)
+            logger.info("Adjusted leading 'Ước' bias for %r -> %r", cleaned_source[:40], fixed[:80])
+            return fixed
+        return cleaned_translation
 
     @staticmethod
     def _clean_translation(text: str) -> str:

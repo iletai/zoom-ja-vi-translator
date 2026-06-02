@@ -11,20 +11,21 @@ from src.llm_translator import LlmTranslator  # noqa: E402
 
 
 class _DummyLlm:
-    def __init__(self) -> None:
+    def __init__(self, response_text: str = "Bản dịch thử") -> None:
         self.messages: list[dict[str, str]] | None = None
         self.prompt: str | None = None
+        self.response_text = response_text
 
     def create_chat_completion(self, *, messages, **_: object) -> dict[str, object]:
         self.messages = messages
-        return {"choices": [{"message": {"content": "Bản dịch thử"}}]}
+        return {"choices": [{"message": {"content": self.response_text}}]}
 
     def create_completion(self, *, prompt, **_: object) -> dict[str, object]:
         self.prompt = prompt
-        return {"choices": [{"text": "Bản dịch thử"}]}
+        return {"choices": [{"text": self.response_text}]}
 
 
-def _make_translator() -> tuple[LlmTranslator, _DummyLlm]:
+def _make_translator(response_text: str = "Bản dịch thử") -> tuple[LlmTranslator, _DummyLlm]:
     translator = LlmTranslator.__new__(LlmTranslator)
     translator._keep_context = False
     translator._history = deque(maxlen=1)
@@ -36,7 +37,7 @@ def _make_translator() -> tuple[LlmTranslator, _DummyLlm]:
     translator.frequency_penalty = 0.1
     translator.max_tokens = 150
     translator.n_ctx = 768
-    dummy_llm = _DummyLlm()
+    dummy_llm = _DummyLlm(response_text=response_text)
     translator.llm = dummy_llm
     return translator, dummy_llm
 
@@ -83,6 +84,12 @@ def test_translate_one_uses_added_filler_phrase_overrides() -> None:
         assert translator._translate_one(source, update_context=False) == translation
 
 
+def test_translate_one_matches_truncated_filler_prefix() -> None:
+    translator, _ = _make_translator()
+
+    assert translator._translate_one("ありがとうございま", update_context=False) == "Cảm ơn"
+
+
 def test_clean_translation_keeps_short_unaccented_vietnamese() -> None:
     assert LlmTranslator._clean_translation("cho con") == "cho con"
 
@@ -112,3 +119,30 @@ def test_build_raw_prompt_uses_true_prefill() -> None:
 
     assert prompt.endswith("<|im_start|>assistant\nVI: ")
     assert not prompt.endswith("<|im_start|>assistant\nVI: <|im_end|>")
+
+
+def test_translate_one_strips_uoc_bias_prefix_for_meeting_sentence() -> None:
+    translator, _ = _make_translator("Ước mong không tiến triển")
+
+    result = translator._translate_one(
+        "前回からそんなたってないんで進捗はないと思いますけどお願いします",
+        update_context=False,
+    )
+
+    assert result == "Không tiến triển"
+
+
+def test_translate_one_rewrites_uoc_bias_to_hi_vong_for_hope_source() -> None:
+    translator, _ = _make_translator("Ước mơ ở mức độ này")
+
+    result = translator._translate_one("あくまで希望のレベルですね", update_context=False)
+
+    assert result == "Hi vọng ở mức độ này"
+
+
+def test_translate_one_keeps_literal_uoc_for_dream_source() -> None:
+    translator, _ = _make_translator("Ước mơ trong tương lai")
+
+    result = translator._translate_one("将来の夢について話します", update_context=False)
+
+    assert result == "Ước mơ trong tương lai"
