@@ -66,6 +66,23 @@ def test_clean_translation_keeps_single_it_term() -> None:
     assert LlmTranslator._clean_translation("API") == "API"
 
 
+def test_translate_one_uses_added_filler_phrase_overrides() -> None:
+    translator, _ = _make_translator()
+
+    expected = {
+        "いえいえこちらこそ": "Không không, bên tôi mới phải cảm ơn",
+        "先日は打ち合わせありがとうございました": "Cảm ơn về cuộc họp hôm trước",
+        "先日はありがとうございました": "Cảm ơn về hôm trước",
+        "いかがですか": "Thế nào ạ?",
+        "いかがでしょうか": "Thế nào ạ?",
+        "難しいですか": "Có khó không?",
+        "難しいと思います": "Tôi nghĩ là khó",
+    }
+
+    for source, translation in expected.items():
+        assert translator._translate_one(source, update_context=False) == translation
+
+
 def test_clean_translation_keeps_short_unaccented_vietnamese() -> None:
     assert LlmTranslator._clean_translation("cho con") == "cho con"
 
@@ -79,6 +96,13 @@ def test_translate_one_replaces_proper_nouns_after_katakana_preprocessing() -> N
     assert dummy_llm.prompt is not None
     assert "<|im_start|>user\nJA: Technology社はAkihabaraに本社があり<|im_end|>\n" in dummy_llm.prompt
     assert dummy_llm.prompt.endswith("<|im_start|>assistant\nVI: ")
+
+
+def test_translate_one_uses_added_katakana_term_overrides() -> None:
+    translator, _ = _make_translator()
+
+    assert translator._translate_one("トークイベント", update_context=False) == "talk event"
+    assert translator._translate_one("トークイーブメント", update_context=False) == "talk event"
 
 
 def test_build_raw_prompt_uses_true_prefill() -> None:

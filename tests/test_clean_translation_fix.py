@@ -38,6 +38,12 @@ def test_valid_translation_passes_through():
     assert LlmTranslator._clean_translation(text) == "Có sai lệch nhưng cũng được nhỉ"
 
 
+def test_leading_english_word_is_stripped_from_vietnamese_output():
+    """Leading English discourse markers should be stripped if the rest is Vietnamese."""
+    text = "unfortunately, tình hình trở nên khó khăn"
+    assert LlmTranslator._clean_translation(text) == "tình hình trở nên khó khăn"
+
+
 def test_sensitive_content_refusal():
     """LLM claiming sensitive content should be rejected."""
     text = "Nội dung nhạy cảm và không phù hợp"

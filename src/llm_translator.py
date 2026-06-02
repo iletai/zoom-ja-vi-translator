@@ -1,6 +1,7 @@
 """LLM-based Japanese-to-Vietnamese translation via llama-cpp-python."""
 from __future__ import annotations
 
+import inspect
 import logging
 import pathlib
 import re
@@ -41,6 +42,11 @@ _DEFAULT_SYSTEM_PROMPT = (
 class LlmTranslator:
     """Drop-in Japanese-to-Vietnamese translator backed by llama.cpp."""
 
+    _FEW_SHOT_EXAMPLES = (
+        ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
+    )
+    _MAX_PROMPT_CONTEXT_SENTENCES = 1
+
     def __init__(self) -> None:
         model_path = pathlib.Path(str(getattr(config, "LLM_MODEL_PATH", ""))).expanduser()
         if not model_path.is_file():
@@ -64,7 +70,8 @@ class LlmTranslator:
             1,
             int(getattr(config, "LLM_N_THREADS", getattr(config, "_PHYSICAL_CORES", 1) or 1)),
         )
-        self.n_batch = max(1, int(getattr(config, "LLM_N_BATCH", 512)))
+        self.n_batch = max(1, int(getattr(config, "LLM_N_BATCH", 1024)))
+        self.n_gpu_layers = int(getattr(config, "LLM_N_GPU_LAYERS", -1))
         self.temperature = float(getattr(config, "LLM_TEMPERATURE", 0.1))
         self.top_p = float(getattr(config, "LLM_TOP_P", 0.3))
         self.frequency_penalty = float(getattr(config, "LLM_FREQUENCY_PENALTY", 0.1))
@@ -76,14 +83,23 @@ class LlmTranslator:
         )
         self._lock = threading.Lock()
 
-        self.llm = Llama(
-            model_path=str(self.model_path),
-            n_ctx=self.n_ctx,
-            n_threads=self.n_threads,
-            n_batch=self.n_batch,
-            use_mlock=bool(getattr(config, "LLM_USE_MLOCK", False)),
-            verbose=False,
-        )
+        llama_kwargs: dict[str, Any] = {
+            "model_path": str(self.model_path),
+            "n_ctx": self.n_ctx,
+            "n_threads": self.n_threads,
+            "n_batch": self.n_batch,
+            "n_gpu_layers": self.n_gpu_layers,
+            "use_mlock": bool(getattr(config, "LLM_USE_MLOCK", False)),
+            "verbose": False,
+        }
+        try:
+            llama_params = inspect.signature(Llama.__init__).parameters
+        except (TypeError, ValueError):
+            llama_params = {}
+        if "flash_attn" in llama_params:
+            llama_kwargs["flash_attn"] = True
+
+        self.llm = Llama(**llama_kwargs)
 
         try:
             self.warmup()
@@ -156,6 +172,13 @@ class LlmTranslator:
         "よろしくお願いいたします": "Rất mong được hỗ trợ",
         "ありがとうございます": "Cảm ơn",
         "ありがとうございました": "Cảm ơn rất nhiều",
+        "先日は打ち合わせありがとうございました": "Cảm ơn về cuộc họp hôm trước",
+        "先日はありがとうございました": "Cảm ơn về hôm trước",
+        "いえいえこちらこそ": "Không không, bên tôi mới phải cảm ơn",
+        "いかがですか": "Thế nào ạ?",
+        "いかがでしょうか": "Thế nào ạ?",
+        "難しいですか": "Có khó không?",
+        "難しいと思います": "Tôi nghĩ là khó",
         "すみません": "Xin lỗi",
         "申し訳ございません": "Thành thật xin lỗi",
         "失礼します": "Xin phép",
@@ -228,6 +251,8 @@ class LlmTranslator:
         "イーシーツー": "EC2",
         "エスキューエス": "SQS",
         "テクノロジー": "Technology",
+        "トークイベント": "talk event",
+        "トークイーブメント": "talk event",
         "データベース": "database",
         "パイプライン": "pipeline",
         "マイグレーション": "migration",
@@ -332,6 +357,10 @@ class LlmTranslator:
         "had", "has", "have", "hello", "however", "is", "it", "its", "may",
         "might", "no", "not", "or", "that", "the", "this", "was", "were",
         "will", "would", "yes", "could", "should", "can",
+    }
+    _LEADING_ENGLISH = {
+        "unfortunately", "however", "but", "well", "so", "yes", "no",
+        "okay", "actually", "basically", "honestly", "also", "and",
     }
 
     def _translate_one(self, text: str, update_context: bool = True) -> str:
@@ -450,11 +479,7 @@ class LlmTranslator:
     def _build_raw_prompt(self, text: str) -> str:
         """Build raw ChatML prompt with TRUE assistant prefill."""
         parts = [f"<|im_start|>system\n{self.system_prompt}<|im_end|>\n"]
-        few_shots = [
-            ("JA: 会議を始めます", "VI: Chúng ta bắt đầu cuộc họp."),
-            ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
-            ("JA: deployのスケジュールを確認してください", "VI: Vui lòng xác nhận lịch deploy."),
-        ]
+        few_shots = getattr(self, "_FEW_SHOT_EXAMPLES", ())
 
         # Estimate token budget: reserve space for output within n_ctx.
         # Rough heuristic: 1 token ≈ 3 chars for mixed CJK/Latin text.
@@ -470,8 +495,12 @@ class LlmTranslator:
             parts.append(f"<|im_start|>assistant\n{asst_ex}<|im_end|>\n")
             used_tokens += cost
 
-        if self._keep_context and self._history and len(text) > 4:
-            recent = list(self._history)[-self.context_sentences:]
+        prompt_context_sentences = min(
+            getattr(self, "context_sentences", 0),
+            getattr(self, "_MAX_PROMPT_CONTEXT_SENTENCES", 1),
+        )
+        if self._keep_context and self._history and len(text) > 4 and prompt_context_sentences > 0:
+            recent = list(self._history)[-prompt_context_sentences:]
             for jp, vi in recent:
                 part_cost = (len(jp) + len(vi)) // 3 + 12
                 if used_tokens + part_cost > token_budget - 40:
@@ -487,11 +516,7 @@ class LlmTranslator:
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         """Deprecated compatibility helper retained for tests and callers."""
         messages = [{"role": "system", "content": self.system_prompt}]
-        few_shots = [
-            ("JA: 会議を始めます", "VI: Chúng ta bắt đầu cuộc họp."),
-            ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
-            ("JA: deployのスケジュールを確認してください", "VI: Vui lòng xác nhận lịch deploy."),
-        ]
+        few_shots = getattr(self, "_FEW_SHOT_EXAMPLES", ())
 
         max_output_tokens = min(self.max_tokens, max(50, len(text) * 3))
         token_budget = self.n_ctx - max_output_tokens
@@ -505,8 +530,12 @@ class LlmTranslator:
             messages.append({"role": "assistant", "content": asst_ex})
             used_tokens += cost
 
-        if self._keep_context and self._history and len(text) > 4:
-            recent = list(self._history)[-self.context_sentences:]
+        prompt_context_sentences = min(
+            getattr(self, "context_sentences", 0),
+            getattr(self, "_MAX_PROMPT_CONTEXT_SENTENCES", 1),
+        )
+        if self._keep_context and self._history and len(text) > 4 and prompt_context_sentences > 0:
+            recent = list(self._history)[-prompt_context_sentences:]
             for jp, vi in recent:
                 part_cost = (len(jp) + len(vi)) // 3 + 12
                 if used_tokens + part_cost > token_budget - 40:
@@ -655,6 +684,21 @@ class LlmTranslator:
         return english_hits >= 2 or len(ascii_words) >= 4
 
     @staticmethod
+    def _strip_leading_english_word(text: str) -> str:
+        match = re.match(r"^([A-Za-z]+)(?:,\s*|\s+)(.+)$", text)
+        if not match:
+            return text
+
+        leading, rest = match.groups()
+        if leading.lower() not in LlmTranslator._LEADING_ENGLISH:
+            return text
+
+        rest = rest.lstrip(" ,").strip()
+        if not rest or not LlmTranslator._VI_DIACRITICS_RE.search(rest):
+            return text
+        return rest
+
+    @staticmethod
     def _clean_translation(text: str) -> str:
         cleaned = text.strip()
         prefixes = ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:", "Dịch sang tiếng Việt:")
@@ -743,6 +787,7 @@ class LlmTranslator:
         if LlmTranslator._is_likely_english(cleaned):
             logger.warning("LLM output appears to be English, not Vietnamese: %r", cleaned[:80])
             return ""
+        cleaned = LlmTranslator._strip_leading_english_word(cleaned)
         return cleaned
 
 
