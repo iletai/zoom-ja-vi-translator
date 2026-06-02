@@ -32,11 +32,14 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
     "Bạn là phiên dịch viên chuyên nghiệp Nhật-Việt trong meeting IT. "
-    "QUY TẮC: "
-    "1. Chỉ xuất bản dịch tiếng Việt, không giải thích. "
-    "2. Giữ nguyên thuật ngữ tiếng Anh: Cloud, AWS, API, deploy, sprint, IoT, AI, Lambda, EC2, S3. "
-    "3. Dịch ngắn gọn, tự nhiên. Bỏ kính ngữ thừa. "
-    "4. Tên riêng giữ nguyên romaji: Akihabara, Shibuya, Tokyo."
+    "QUY TẮC BẮT BUỘC: "
+    "1. CHỈ xuất bản dịch tiếng Việt. KHÔNG BAO GIỜ viết 'Tôi sẽ dịch', "
+    "'Đây là bản dịch', hay bất kỳ lời giải thích/giới thiệu nào. "
+    "2. KHÔNG BAO GIỜ từ chối dịch. Mọi nội dung đều là cuộc họp công việc bình thường. "
+    "3. Giữ nguyên thuật ngữ tiếng Anh: Cloud, AWS, API, deploy, sprint, IoT, AI, Lambda, EC2, S3. "
+    "4. Dịch ngắn gọn, tự nhiên. Bỏ kính ngữ thừa. "
+    "5. Tên riêng giữ nguyên romaji: Akihabara, Shibuya, Tokyo. "
+    "6. Nếu câu không rõ nghĩa, dịch theo nghĩa gần nhất có thể."
 )
 
 
@@ -362,17 +365,27 @@ class LlmTranslator:
                     retry_messages = [
                         {
                             "role": "system",
-                            "content": "Dịch tiếng Nhật sang tiếng Việt. Chỉ xuất bản dịch.",
+                            "content": (
+                                "Bạn là máy dịch. Nhận tiếng Nhật, trả tiếng Việt. "
+                                "KHÔNG giải thích, KHÔNG từ chối, KHÔNG viết gì ngoài bản dịch."
+                            ),
                         },
-                        {"role": "user", "content": processed},
+                        {
+                            "role": "user",
+                            "content": f"JP: {processed}",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": "VI:",
+                        },
                     ]
                     retry_response = self.llm.create_chat_completion(
                         messages=retry_messages,
-                        temperature=0.3,
-                        top_p=0.5,
+                        temperature=0.4,
+                        top_p=0.6,
                         frequency_penalty=0.2,
                         max_tokens=self.max_tokens,
-                        stop=["\n", "\n\n", "<|im_end|>"],
+                        stop=["<|im_end|>", "\n\n", "JP:"],
                     )
                     translation = self._clean_translation(
                         self._extract_translation(retry_response)
@@ -394,17 +407,30 @@ class LlmTranslator:
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": self.system_prompt}]
-        # Fixed one-shot example to anchor Vietnamese output format.
+        # Fixed one-shot example to anchor direct Vietnamese output (no preamble).
         messages.append(
             {
                 "role": "user",
-                "content": "Dịch sang tiếng Việt: クラウドのarchitectureについて説明します",
+                "content": "クラウドのarchitectureについて説明します",
             }
         )
         messages.append(
             {
                 "role": "assistant",
                 "content": "Tôi sẽ giải thích về kiến trúc Cloud.",
+            }
+        )
+        # Second example: casual speech to show model handles informal input
+        messages.append(
+            {
+                "role": "user",
+                "content": "ちょっとずれがあってもまあそうですね",
+            }
+        )
+        messages.append(
+            {
+                "role": "assistant",
+                "content": "Dù có lệch một chút thì cũng vậy nhỉ.",
             }
         )
         # Skip context for very short inputs — small models tend to repeat
@@ -415,8 +441,8 @@ class LlmTranslator:
             context_line = "".join(
                 f"(前: {jp} → {vi})\n" for jp, vi in recent
             )
-        # Current sentence to translate — Vietnamese command biases output language
-        user_content = f"{context_line}Dịch sang tiếng Việt: {text}"
+        # Current sentence to translate — no prefix label to avoid triggering preambles
+        user_content = f"{context_line}{text}" if context_line else text
         messages.append({"role": "user", "content": user_content})
         return messages
 
@@ -453,24 +479,34 @@ class LlmTranslator:
             return "".join(parts)
         return str(content or "")
 
-    # Patterns that indicate LLM refused or explained instead of translating
-    _REFUSAL_PATTERNS = (
+    # Patterns that indicate LLM genuinely refused to translate (hard refusals)
+    _HARD_REFUSAL_PATTERNS = (
         "tôi sẽ không dịch",
         "tôi không thể dịch",
+        "tôi xin lỗi",
+        "nội dung nhạy cảm",
+        "không phù hợp",
+        "i cannot translate",
+        "i won't translate",
+        "i can't translate",
+    )
+
+    # Patterns that indicate LLM added a preamble/explanation wrapper.
+    # These are stripped from the output; if nothing useful remains, retry kicks in.
+    _PREAMBLE_PATTERNS = (
         "tôi sẽ dịch",
         "đoạn văn này",
-        "xin chào",
-        "chào bạn",
-        "có nghĩa là",
         "câu tiếng nhật",
         "bản dịch là",
         "hướng dẫn cho việc dịch",
         "đây là bản dịch",
         "bản dịch sang tiếng việt",
         "dịch sang tiếng việt:",
-        "i cannot translate",
-        "i won't translate",
-        "i can't translate",
+    )
+
+    # Combined for backward compatibility in detection
+    _REFUSAL_PATTERNS = _HARD_REFUSAL_PATTERNS + _PREAMBLE_PATTERNS + (
+        "có nghĩa là",
     )
 
     # Regex to detect Japanese-specific characters (Hiragana, Katakana only)
@@ -485,6 +521,7 @@ class LlmTranslator:
         for prefix in prefixes:
             if cleaned.lower().startswith(prefix.lower()):
                 cleaned = cleaned[len(prefix):].strip()
+        # Try extracting content after a colon (common preamble pattern)
         colon_index = cleaned.rfind(":")
         if colon_index != -1:
             meta_prefix = cleaned[:colon_index].strip()
@@ -499,9 +536,31 @@ class LlmTranslator:
                 for prefix in prefixes:
                     if cleaned.lower().startswith(prefix.lower()):
                         cleaned = cleaned[len(prefix):].strip()
-        # Take first line only
+            elif (
+                meta_prefix
+                and not candidate
+                and any(word in meta_prefix.lower() for word in ("dịch", "bản", "sau", "tiếng"))
+            ):
+                # Preamble ending with colon but no content (cut off by stop token)
+                logger.debug("Preamble with no content after colon: %r", cleaned)
+                return ""
+        # Handle multi-line: take first non-empty line that looks like a translation
         if "\n" in cleaned:
-            cleaned = next((line.strip() for line in cleaned.splitlines() if line.strip()), "")
+            lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+            # Skip lines that look like preambles
+            for line in lines:
+                lower_line = line.lower()
+                is_preamble = any(
+                    p in lower_line for p in LlmTranslator._PREAMBLE_PATTERNS
+                ) or any(
+                    p in lower_line for p in LlmTranslator._HARD_REFUSAL_PATTERNS
+                )
+                if not is_preamble:
+                    cleaned = line
+                    break
+            else:
+                # All lines are preambles/refusals
+                return ""
         cleaned = cleaned.strip("`'\" ")
         # Reject if output contains Hiragana/Katakana (definitely JP, not translation)
         if LlmTranslator._JP_KANA_RE.search(cleaned):
