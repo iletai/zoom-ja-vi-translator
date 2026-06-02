@@ -194,9 +194,10 @@ def _configure_file_logging(log_path: str | None) -> None:
     ))
     root.addHandler(fh)
 
-    # Console handler — only WARNING+ (keeps terminal clean for subtitle output)
+    # Console handler — suppress all logging from terminal (only goes to file)
+    # Subtitle output uses print() directly; logger messages would clutter it.
     ch = logging.StreamHandler(sys.stderr)
-    ch.setLevel(logging.WARNING)
+    ch.setLevel(logging.CRITICAL)  # effectively silent
     ch.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
     root.addHandler(ch)
 
