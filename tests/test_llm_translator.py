@@ -13,10 +13,15 @@ from src.llm_translator import LlmTranslator  # noqa: E402
 class _DummyLlm:
     def __init__(self) -> None:
         self.messages: list[dict[str, str]] | None = None
+        self.prompt: str | None = None
 
     def create_chat_completion(self, *, messages, **_: object) -> dict[str, object]:
         self.messages = messages
         return {"choices": [{"message": {"content": "Bản dịch thử"}}]}
+
+    def create_completion(self, *, prompt, **_: object) -> dict[str, object]:
+        self.prompt = prompt
+        return {"choices": [{"text": "Bản dịch thử"}]}
 
 
 def _make_translator() -> tuple[LlmTranslator, _DummyLlm]:
@@ -71,9 +76,15 @@ def test_translate_one_replaces_proper_nouns_after_katakana_preprocessing() -> N
     result = translator._translate_one("テクノロジー社は秋葉原に本社があり", update_context=False)
 
     assert result == "Bản dịch thử"
-    assert dummy_llm.messages is not None
-    assert dummy_llm.messages[-2] == {
-        "role": "user",
-        "content": "JA: Technology社はAkihabaraに本社があり",
-    }
-    assert dummy_llm.messages[-1] == {"role": "assistant", "content": "VI:"}
+    assert dummy_llm.prompt is not None
+    assert "<|im_start|>user\nJA: Technology社はAkihabaraに本社があり<|im_end|>\n" in dummy_llm.prompt
+    assert dummy_llm.prompt.endswith("<|im_start|>assistant\nVI: ")
+
+
+def test_build_raw_prompt_uses_true_prefill() -> None:
+    translator, _ = _make_translator()
+
+    prompt = translator._build_raw_prompt("会議を始めます")
+
+    assert prompt.endswith("<|im_start|>assistant\nVI: ")
+    assert not prompt.endswith("<|im_start|>assistant\nVI: <|im_end|>")

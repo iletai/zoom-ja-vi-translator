@@ -31,10 +31,10 @@ except Exception:  # pragma: no cover - fallback for partial environments
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
-    "You are a JA→VI translator. "
-    "Output ONLY the Vietnamese translation. "
-    "Never output English. Never explain. Never refuse. "
-    "Keep English IT terms: Cloud, API, deploy, sprint, server."
+    "Bạn là máy dịch Nhật→Việt chuyên IT. "
+    "Nhận tiếng Nhật, xuất ĐÚNG MỘT DÒNG tiếng Việt, không thêm gì khác. "
+    "Giữ nguyên: Cloud, AWS, API, deploy, sprint, IoT, AI, EC2, S3, Lambda. "
+    "Tên riêng giữ romaji: Tokyo, Shibuya, Akihabara."
 )
 
 
@@ -352,60 +352,56 @@ class LlmTranslator:
 
         try:
             with self._lock:
-                messages = self._build_messages(processed)
-                response_max_tokens = min(
+                raw_prompt = self._build_raw_prompt(processed)
+                dynamic_max_tokens = min(
                     self.max_tokens,
                     max(50, len(processed) * 3),
                 )
-                response = self.llm.create_chat_completion(
-                    messages=messages,
+                response = self.llm.create_completion(
+                    prompt=raw_prompt,
+                    max_tokens=dynamic_max_tokens,
                     temperature=self.temperature,
                     top_p=self.top_p,
                     frequency_penalty=self.frequency_penalty,
-                    presence_penalty=0.1,
-                    max_tokens=response_max_tokens,
-                    stop=["\n", "<|im_end|>", "JA:", "JP:"],
+                    repeat_penalty=1.1,
+                    stop=["\n", "<|im_end|>", "JA:", "JP:", "\nJA:", " Here ", " This is", "I am", "I will", "Let me"],
                 )
-                translation = self._clean_translation(self._extract_translation(response))
-                # Reject if translation is absurdly long relative to source
-                # (Vietnamese translations of Japanese are typically 1-3x length)
-                if translation and len(translation) > max(80, len(cleaned) * 4):
+                raw_text = response["choices"][0]["text"] if response.get("choices") else ""
+                translation = self._clean_translation(raw_text)
+                # Reject if translation is absurdly long relative to source.
+                # Short Japanese inputs can legitimately expand much more in Vietnamese.
+                if translation and len(translation) > max(120, len(cleaned) * 6):
                     logger.warning(
                         "LLM output too long vs source (%d vs %d chars), rejecting: %r",
                         len(translation), len(cleaned), translation[:80],
                     )
                     translation = ""
                 if not translation:
-                    retry_messages = [
-                        {
-                            "role": "system",
-                            "content": (
-                                "Bạn là máy dịch. Nhận tiếng Nhật, trả tiếng Việt. "
-                                "KHÔNG giải thích, KHÔNG từ chối, KHÔNG viết gì ngoài bản dịch."
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": f"JP: {processed}",
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "VI:",
-                        },
-                    ]
-                    retry_response = self.llm.create_chat_completion(
-                        messages=retry_messages,
+                    retry_prompt = (
+                        "<|im_start|>system\n"
+                        "Máy dịch Nhật→Việt. Chỉ xuất bản dịch tiếng Việt.<|im_end|>\n"
+                        "<|im_start|>user\n"
+                        f"JA: {processed}<|im_end|>\n"
+                        "<|im_start|>assistant\n"
+                        "VI: "
+                    )
+                    retry_response = self.llm.create_completion(
+                        prompt=retry_prompt,
+                        max_tokens=dynamic_max_tokens,
                         temperature=0.4,
                         top_p=0.6,
                         frequency_penalty=0.2,
-                        max_tokens=self.max_tokens,
-                        stop=["<|im_end|>", "\n\n", "JP:"],
+                        repeat_penalty=1.15,
+                        stop=["<|im_end|>", "\n\n", "JA:", "JP:", " Here ", " This is", "I am", "I will", "Let me"],
                     )
-                    translation = self._clean_translation(
-                        self._extract_translation(retry_response)
+                    raw_retry = (
+                        retry_response["choices"][0]["text"]
+                        if retry_response.get("choices")
+                        else ""
                     )
+                    translation = self._clean_translation(raw_retry)
                     # Length ratio check for retry too
-                    if translation and len(translation) > max(80, len(cleaned) * 4):
+                    if translation and len(translation) > max(120, len(cleaned) * 6):
                         logger.warning(
                             "Retry output too long vs source (%d vs %d chars): %r",
                             len(translation), len(cleaned), translation[:80],
@@ -426,49 +422,75 @@ class LlmTranslator:
             logger.warning("LLM translation failed for %r: %s", cleaned, exc)
             return ""
 
-    def _build_messages(self, text: str) -> list[dict[str, str]]:
-        messages = [{"role": "system", "content": self.system_prompt}]
-        # Few-shot examples using JA→VI format to establish translation pattern.
+    def _build_raw_prompt(self, text: str) -> str:
+        """Build raw ChatML prompt with TRUE assistant prefill."""
+        parts = [f"<|im_start|>system\n{self.system_prompt}<|im_end|>\n"]
         few_shots = [
-            ("JA: クラウドの構成を確認します", "VI: Tôi sẽ xác nhận cấu trúc Cloud."),
-            ("JA: 今日deployできますか", "VI: Hôm nay có thể deploy không?"),
+            ("JA: 会議を始めます", "VI: Chúng ta bắt đầu cuộc họp."),
             ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
+            ("JA: deployのスケジュールを確認してください", "VI: Vui lòng xác nhận lịch deploy."),
         ]
 
         # Estimate token budget: reserve space for output within n_ctx.
         # Rough heuristic: 1 token ≈ 3 chars for mixed CJK/Latin text.
         max_output_tokens = min(self.max_tokens, max(50, len(text) * 3))
         token_budget = self.n_ctx - max_output_tokens
-        # System prompt + prefill overhead (~60 tokens)
         used_tokens = len(self.system_prompt) // 3 + 10
 
-        # Add few-shot examples (trim from end if budget tight)
         for user_ex, asst_ex in few_shots:
-            cost = (len(user_ex) + len(asst_ex)) // 3 + 6
-            if used_tokens + cost > token_budget - 80:  # leave room for input
+            cost = (len(user_ex) + len(asst_ex)) // 3 + 12
+            if used_tokens + cost > token_budget - 80:
+                break
+            parts.append(f"<|im_start|>user\n{user_ex}<|im_end|>\n")
+            parts.append(f"<|im_start|>assistant\n{asst_ex}<|im_end|>\n")
+            used_tokens += cost
+
+        if self._keep_context and self._history and len(text) > 4:
+            recent = list(self._history)[-self.context_sentences:]
+            for jp, vi in recent:
+                part_cost = (len(jp) + len(vi)) // 3 + 12
+                if used_tokens + part_cost > token_budget - 40:
+                    break
+                parts.append(f"<|im_start|>user\nJA: {jp}<|im_end|>\n")
+                parts.append(f"<|im_start|>assistant\nVI: {vi}<|im_end|>\n")
+                used_tokens += part_cost
+
+        parts.append(f"<|im_start|>user\nJA: {text}<|im_end|>\n")
+        parts.append("<|im_start|>assistant\nVI: ")
+        return "".join(parts)
+
+    def _build_messages(self, text: str) -> list[dict[str, str]]:
+        """Deprecated compatibility helper retained for tests and callers."""
+        messages = [{"role": "system", "content": self.system_prompt}]
+        few_shots = [
+            ("JA: 会議を始めます", "VI: Chúng ta bắt đầu cuộc họp."),
+            ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
+            ("JA: deployのスケジュールを確認してください", "VI: Vui lòng xác nhận lịch deploy."),
+        ]
+
+        max_output_tokens = min(self.max_tokens, max(50, len(text) * 3))
+        token_budget = self.n_ctx - max_output_tokens
+        used_tokens = len(self.system_prompt) // 3 + 10
+
+        for user_ex, asst_ex in few_shots:
+            cost = (len(user_ex) + len(asst_ex)) // 3 + 12
+            if used_tokens + cost > token_budget - 80:
                 break
             messages.append({"role": "user", "content": user_ex})
             messages.append({"role": "assistant", "content": asst_ex})
             used_tokens += cost
 
-        # Context history (skip for very short inputs to avoid echo)
-        context_line = ""
         if self._keep_context and self._history and len(text) > 4:
             recent = list(self._history)[-self.context_sentences:]
-            # Only include context that fits in remaining budget
-            context_parts = []
             for jp, vi in recent:
-                part = f"(前: {jp} → {vi})\n"
-                cost = len(part) // 3
-                if used_tokens + cost > token_budget - 40:
+                part_cost = (len(jp) + len(vi)) // 3 + 12
+                if used_tokens + part_cost > token_budget - 40:
                     break
-                context_parts.append(part)
-                used_tokens += cost
-            context_line = "".join(context_parts)
+                messages.append({"role": "user", "content": f"JA: {jp}"})
+                messages.append({"role": "assistant", "content": f"VI: {vi}"})
+                used_tokens += part_cost
 
-        # Current sentence with JA: tag to anchor the translation task.
-        user_content = f"{context_line}JA: {text}" if context_line else f"JA: {text}"
-        messages.append({"role": "user", "content": user_content})
+        messages.append({"role": "user", "content": f"JA: {text}"})
         messages.append({"role": "assistant", "content": "VI:"})
         return messages
 
