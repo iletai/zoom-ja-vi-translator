@@ -361,6 +361,14 @@ class LlmTranslator:
                     stop=["\n", "\n\n", "<|im_end|>"],
                 )
                 translation = self._clean_translation(self._extract_translation(response))
+                # Reject if translation is absurdly long relative to source
+                # (Vietnamese translations of Japanese are typically 1-3x length)
+                if translation and len(translation) > max(80, len(cleaned) * 4):
+                    logger.warning(
+                        "LLM output too long vs source (%d vs %d chars), rejecting: %r",
+                        len(translation), len(cleaned), translation[:80],
+                    )
+                    translation = ""
                 if not translation:
                     retry_messages = [
                         {
@@ -390,6 +398,13 @@ class LlmTranslator:
                     translation = self._clean_translation(
                         self._extract_translation(retry_response)
                     )
+                    # Length ratio check for retry too
+                    if translation and len(translation) > max(80, len(cleaned) * 4):
+                        logger.warning(
+                            "Retry output too long vs source (%d vs %d chars): %r",
+                            len(translation), len(cleaned), translation[:80],
+                        )
+                        translation = ""
                     if not translation:
                         logger.warning(
                             "Empty LLM translation for JP sentence (after retry): %r",
@@ -407,32 +422,13 @@ class LlmTranslator:
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": self.system_prompt}]
-        # Fixed one-shot example to anchor direct Vietnamese output (no preamble).
-        messages.append(
-            {
-                "role": "user",
-                "content": "クラウドのarchitectureについて説明します",
-            }
-        )
-        messages.append(
-            {
-                "role": "assistant",
-                "content": "Tôi sẽ giải thích về kiến trúc Cloud.",
-            }
-        )
-        # Second example: casual speech to show model handles informal input
-        messages.append(
-            {
-                "role": "user",
-                "content": "ちょっとずれがあってもまあそうですね",
-            }
-        )
-        messages.append(
-            {
-                "role": "assistant",
-                "content": "Dù có lệch một chút thì cũng vậy nhỉ.",
-            }
-        )
+        # Few-shot examples using JA→VI format to establish translation pattern
+        messages.append({"role": "user", "content": "JA: クラウドのarchitectureについて説明します"})
+        messages.append({"role": "assistant", "content": "Tôi sẽ giải thích về kiến trúc Cloud."})
+        messages.append({"role": "user", "content": "JA: ちょっとずれがあってもまあそうですね"})
+        messages.append({"role": "assistant", "content": "Dù có lệch một chút thì cũng vậy nhỉ."})
+        messages.append({"role": "user", "content": "JA: みなさんこんにちは"})
+        messages.append({"role": "assistant", "content": "Chào mọi người."})
         # Skip context for very short inputs — small models tend to repeat
         # previous translations when the current input is just 1-3 chars.
         context_line = ""
@@ -441,8 +437,8 @@ class LlmTranslator:
             context_line = "".join(
                 f"(前: {jp} → {vi})\n" for jp, vi in recent
             )
-        # Current sentence to translate — no prefix label to avoid triggering preambles
-        user_content = f"{context_line}{text}" if context_line else text
+        # Current sentence with JA: tag to anchor the translation task
+        user_content = f"{context_line}JA: {text}" if context_line else f"JA: {text}"
         messages.append({"role": "user", "content": user_content})
         return messages
 
@@ -495,13 +491,18 @@ class LlmTranslator:
     # These are stripped from the output; if nothing useful remains, retry kicks in.
     _PREAMBLE_PATTERNS = (
         "tôi sẽ dịch",
+        "tôi hiểu rồi",
+        "bạn muốn tôi dịch",
+        "bạn muốn tôi",
         "đoạn văn này",
+        "đoạn hội thoại",
         "câu tiếng nhật",
         "bản dịch là",
         "hướng dẫn cho việc dịch",
         "đây là bản dịch",
         "bản dịch sang tiếng việt",
         "dịch sang tiếng việt:",
+        "dịch đoạn",
     )
 
     # Combined for backward compatibility in detection

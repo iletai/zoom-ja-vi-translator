@@ -59,5 +59,5 @@ def test_translate_one_replaces_proper_nouns_after_katakana_preprocessing() -> N
     assert dummy_llm.messages is not None
     assert (
         dummy_llm.messages[-1]["content"]
-        == "Technology社はAkihabaraに本社があり"
+        == "JA: Technology社はAkihabaraに本社があり"
     )

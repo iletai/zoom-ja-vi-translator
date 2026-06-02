@@ -47,3 +47,15 @@ def test_sensitive_content_refusal():
 def test_vi_prefix_stripped():
     """VI: prefix should be stripped."""
     assert LlmTranslator._clean_translation("VI: Xin chào mọi người") == "Xin chào mọi người"
+
+
+def test_meta_explanation_detected():
+    """LLM explaining instead of translating should be caught."""
+    text = "Tôi hiểu rồi, bạn muốn tôi dịch đoạn hội thoại này từ tiếng Nhật sang tiếng Việt."
+    assert LlmTranslator._clean_translation(text) == ""
+
+
+def test_conversational_response_with_preamble():
+    """Model responding conversationally with 'bạn muốn tôi' should be caught."""
+    text = "Bạn muốn tôi dịch câu này sang tiếng Việt phải không?"
+    assert LlmTranslator._clean_translation(text) == ""
