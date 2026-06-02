@@ -50,10 +50,42 @@ class LlmTranslator:
 
     _FEW_SHOT_EXAMPLES = (
         ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
-        ("JA: この処理を入れることによってエラーが起きない対応を入れました", "VI: Bằng cách thêm xử lý này, chúng tôi đã thêm biện pháp để không xảy ra lỗi."),
-        ("JA: 今回の件に関してはPRに反映させていただきます", "VI: Về vấn đề lần này, tôi sẽ phản ánh vào PR."),
+        ("JA: この処理を入れることによってエラーが起きない対応を入れました",
+         "VI: Bằng cách thêm xử lý này, chúng tôi đã thêm biện pháp để không xảy ra lỗi."),
+        ("JA: 木曜日の午後にミーティングがあります",
+         "VI: Có cuộc họp vào chiều thứ Năm."),
+        ("JA: 後でスケジュールを確認します",
+         "VI: Tôi sẽ kiểm tra lịch trình sau."),
+        ("JA: 来月のスケジュールを共有します",
+         "VI: Tôi sẽ chia sẻ lịch trình tháng tới."),
         ("JA: 確認作業が完了しました", "VI: Công việc xác nhận đã hoàn thành."),
     )
+
+    # Day-of-week pre-processing dictionary (deterministic, zero-latency)
+    _JP_DOW_MAP = {
+        # Full forms (〇曜日)
+        "月曜日": "thứ Hai", "火曜日": "thứ Ba", "水曜日": "thứ Tư",
+        "木曜日": "thứ Năm", "金曜日": "thứ Sáu",
+        "土曜日": "thứ Bảy", "日曜日": "Chủ nhật",
+        # Short forms (〇曜) — ASR often drops 日
+        "月曜": "thứ Hai", "火曜": "thứ Ba", "水曜": "thứ Tư",
+        "木曜": "thứ Năm", "金曜": "thứ Sáu",
+        "土曜": "thứ Bảy", "日曜": "Chủ nhật",
+    }
+
+    # SVO word order fix patterns — Vietnamese: Subject + Modal + Verb
+    _SVO_FIX_PATTERNS = [
+        # "sẽ tôi" → "tôi sẽ" etc.
+        (re.compile(r'\bsẽ\s+(tôi|chúng tôi|chúng ta|bạn|họ|anh|chị)\b', re.IGNORECASE),
+         lambda m: f"{m.group(1)} sẽ"),
+        (re.compile(r'\bđã\s+(tôi|chúng tôi|chúng ta|bạn|họ|anh|chị)\b', re.IGNORECASE),
+         lambda m: f"{m.group(1)} đã"),
+        (re.compile(r'\bđang\s+(tôi|chúng tôi|chúng ta|bạn|họ|anh|chị)\b', re.IGNORECASE),
+         lambda m: f"{m.group(1)} đang"),
+    ]
+
+    # Wrong Ư-starter words (almost never valid at sentence start in IT context)
+    _WRONG_U_STARTERS = ("Ướt ", "Ưỡn ", "Ướm ")
     _MAX_PROMPT_CONTEXT_SENTENCES = 1
 
     def __init__(self) -> None:
@@ -74,12 +106,12 @@ class LlmTranslator:
 
         self.model_path = model_path
         self.system_prompt = getattr(config, "LLM_SYSTEM_PROMPT", _DEFAULT_SYSTEM_PROMPT)
-        self.n_ctx = max(128, int(getattr(config, "LLM_N_CTX", 1024)))
+        self.n_ctx = max(128, int(getattr(config, "LLM_N_CTX", 512)))
         self.n_threads = max(
             1,
             int(getattr(config, "LLM_N_THREADS", getattr(config, "_PHYSICAL_CORES", 1) or 1)),
         )
-        self.n_batch = max(1, int(getattr(config, "LLM_N_BATCH", 1024)))
+        self.n_batch = max(1, int(getattr(config, "LLM_N_BATCH", 512)))
         self.n_gpu_layers = int(getattr(config, "LLM_N_GPU_LAYERS", -1))
         self.temperature = float(getattr(config, "LLM_TEMPERATURE", 0.1))
         self.top_p = float(getattr(config, "LLM_TOP_P", 0.3))
@@ -92,10 +124,15 @@ class LlmTranslator:
         )
         self._lock = threading.Lock()
 
+        # Build llama kwargs with performance optimizations
+        import multiprocessing
+        _logical = multiprocessing.cpu_count()
+
         llama_kwargs: dict[str, Any] = {
             "model_path": str(self.model_path),
             "n_ctx": self.n_ctx,
             "n_threads": self.n_threads,
+            "n_threads_batch": _logical,  # Prefill: use all logical cores
             "n_batch": self.n_batch,
             "n_gpu_layers": self.n_gpu_layers,
             "use_mlock": bool(getattr(config, "LLM_USE_MLOCK", False)),
@@ -107,16 +144,44 @@ class LlmTranslator:
             llama_params = {}
         if "flash_attn" in llama_params:
             llama_kwargs["flash_attn"] = True
+        # KV cache quantization (Q8_0 = type 8): ~50% VRAM savings, negligible quality loss
+        if "type_k" in llama_params:
+            llama_kwargs["type_k"] = 8
+            llama_kwargs["type_v"] = 8
+
+        # Speculative decoding via prompt-lookup (zero extra model cost)
+        try:
+            from llama_cpp.llama_speculative import LlamaPromptLookupDecoding
+            if "draft_model" in llama_params:
+                num_pred = 10 if self.n_gpu_layers != 0 else 2
+                llama_kwargs["draft_model"] = LlamaPromptLookupDecoding(
+                    num_pred_tokens=num_pred,
+                    max_ngram_size=2,
+                )
+                logger.info("Speculative decoding enabled (num_pred_tokens=%d)", num_pred)
+        except ImportError:
+            pass
+        except Exception as exc:
+            logger.debug("Speculative decoding not available: %s", exc)
 
         self.llm = Llama(**llama_kwargs)
 
+        # Enable RAM cache for KV state reuse across calls
+        try:
+            from llama_cpp import LlamaRAMCache
+            self.llm.set_cache(LlamaRAMCache(capacity_bytes=512 * 1024 * 1024))
+            logger.info("LlamaRAMCache enabled (512MB)")
+        except (ImportError, AttributeError, Exception) as exc:
+            logger.debug("LlamaRAMCache not available: %s", exc)
+
         # Build logit bias to penalize Chinese-specific tokens.
-        # This discourages the model from generating Chinese without
-        # completely blocking characters that overlap with Vietnamese Hán-Việt.
         self._chinese_logit_bias = self._build_chinese_logit_bias()
 
         # Optionally build GBNF grammar for hard Latin-only output constraint.
         self._vi_grammar = self._build_vi_grammar()
+
+        # NLLB fast-path translator for simple sentences
+        self._fast_translator = self._init_fast_translator()
 
         try:
             self.warmup()
@@ -201,6 +266,42 @@ digit ::= [0-9]
         except Exception as exc:
             logger.warning("Failed to build GBNF grammar: %s", exc)
             return None
+
+    def _init_fast_translator(self):
+        """Initialize NLLB fast-path translator for simple sentences."""
+        try:
+            from src.translator import NllbTranslator
+            fast = NllbTranslator()
+            logger.info("NLLB fast-path translator initialized")
+            return fast
+        except Exception as exc:
+            logger.debug("NLLB fast-path not available: %s", exc)
+            return None
+
+    # Keigo/complex grammar indicators that require LLM
+    _COMPLEX_GRAMMAR_MARKERS = (
+        "については", "に関して", "に対して",
+        "というのは", "ということで", "ということ",
+        "ではないでしょうか", "させていただ",
+        "いただけ", "くださ", "ございま",
+    )
+
+    def _classify_complexity(self, text: str) -> str:
+        """Route sentence to appropriate translation tier.
+
+        Returns: 'nllb' for fast NMT path, 'llm' for full LLM translation.
+        """
+        if not self._fast_translator:
+            return "llm"
+        n = len(text)
+        # Keigo/formal patterns → need LLM for nuance (check first, any length)
+        if any(marker in text for marker in self._COMPLEX_GRAMMAR_MARKERS):
+            return "llm"
+        # Short or medium sentence without complex grammar → NLLB
+        if n <= 60:
+            return "nllb"
+        # Long sentences → LLM for better context handling
+        return "llm"
 
     def translate(self, text: str) -> str:
         """Translate Japanese ``text`` to Vietnamese without raising on failures."""
@@ -356,8 +457,8 @@ digit ::= [0-9]
         "イーシーツー": "EC2",
         "エスキューエス": "SQS",
         "テクノロジー": "Technology",
-        "トークイベント": "talk event",
-        "トークイーブメント": "talk event",
+        "トークイベント": "sự kiện thảo luận",
+        "トークイーブメント": "sự kiện thảo luận",
         "データベース": "database",
         "パイプライン": "pipeline",
         "マイグレーション": "migration",
@@ -366,7 +467,7 @@ digit ::= [0-9]
         "オンプレミス": "on-premises",
         "サーバーレス": "serverless",
         "アーキテクト": "architect",
-        "スケジュール": "schedule",
+        "スケジュール": "lịch trình",
         "ネットワーク": "network",
         "ライブラリ": "library",
         "バックログ": "backlog",
@@ -375,7 +476,7 @@ digit ::= [0-9]
         "エンジニア": "engineer",
         "レビュー": "review",
         "スクラム": "Scrum",
-        "アジェンダ": "agenda",
+        "アジェンダ": "chương trình nghị sự",
         "アマゾン": "Amazon",
         "インフラ": "infrastructure",
         "オンプレ": "on-premises",
@@ -506,12 +607,31 @@ digit ::= [0-9]
         for keigo, plain in self._KEIGO_SIMPLIFY:
             processed = processed.replace(keigo, plain)
 
-        # Pre-process: replace known katakana IT terms with English equivalents
-        # so the LLM doesn't mistranslate them. Longest match first.
+        # Pre-process: replace day-of-week kanji with correct Vietnamese (deterministic)
+        for jp_day, vi_day in sorted(
+            self._JP_DOW_MAP.items(), key=lambda x: -len(x[0])
+        ):
+            processed = processed.replace(jp_day, vi_day)
+
+        # Pre-process: replace known katakana IT terms with equivalents. Longest first.
         for ja_term, en_term in sorted(
             self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0])
         ):
             processed = processed.replace(ja_term, en_term)
+
+        # NLLB fast-path: route simple sentences to NMT for lower latency
+        tier = self._classify_complexity(cleaned)
+        if tier == "nllb":
+            try:
+                nllb_result = self._fast_translator.translate(processed)
+                if nllb_result and nllb_result.strip():
+                    result = self._fix_word_order(nllb_result.strip())
+                    if update_context and self._keep_context:
+                        self._history.append((cleaned, result))
+                    logger.debug("NLLB fast-path: %r -> %r", cleaned[:40], result[:60])
+                    return result
+            except Exception as exc:
+                logger.debug("NLLB fast-path failed, falling back to LLM: %s", exc)
 
         # Inject Vietnamese hints for kanji business terms (helps LLM accuracy)
         for kanji, hint in self._BUSINESS_GLOSSARY.items():
@@ -947,7 +1067,24 @@ digit ::= [0-9]
                 fixed = cls._normalize_sentence_start(rest, capitalize=True)
             logger.info("Adjusted leading 'Ước' bias for %r -> %r", cleaned_source[:40], fixed[:80])
             return fixed
+
+        # Fix wrong-U starters (Ướt, Ưỡn, Ướm) that are hallucinated
+        for wrong in cls._WRONG_U_STARTERS:
+            if cleaned_translation.startswith(wrong):
+                rest = cleaned_translation[len(wrong):].strip()
+                if rest:
+                    fixed = cls._normalize_sentence_start(rest, capitalize=True)
+                    logger.info("Stripped wrong-U starter %r: %r -> %r", wrong.strip(), cleaned_translation[:40], fixed[:60])
+                    return fixed
         return cleaned_translation
+
+    @staticmethod
+    def _fix_word_order(text: str) -> str:
+        """Fix SVO word order errors where modal comes before subject."""
+        result = text
+        for pattern, replacement in LlmTranslator._SVO_FIX_PATTERNS:
+            result = pattern.sub(replacement, result)
+        return result
 
     @staticmethod
     def _clean_translation(text: str) -> str:
@@ -1057,6 +1194,8 @@ digit ::= [0-9]
             logger.warning("LLM output appears to be English, not Vietnamese: %r", cleaned[:80])
             return ""
         cleaned = LlmTranslator._strip_leading_english_word(cleaned)
+        # Fix SVO word order issues before returning
+        cleaned = LlmTranslator._fix_word_order(cleaned)
         return cleaned
 
 

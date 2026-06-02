@@ -337,10 +337,10 @@ else:
     _LLM_DEFAULT_MODEL = _LLM_1P5B_FILE
     LLM_MODEL_DIR = _LLM_1P5B_DIR
 LLM_MODEL_PATH = Path(os.environ.get("ZT_LLM_MODEL", str(_LLM_DEFAULT_MODEL)))
-LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "1024"))
+LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "512"))
 # Reserve 2 cores for audio capture + ASR; give the rest to LLM.
 LLM_N_THREADS = int(os.environ.get("ZT_LLM_THREADS", str(max(2, _PHYSICAL_CORES - 2))))
-LLM_N_BATCH = int(os.environ.get("ZT_LLM_BATCH", "1024"))
+LLM_N_BATCH = int(os.environ.get("ZT_LLM_BATCH", "512"))
 LLM_N_GPU_LAYERS = int(os.environ.get("ZT_LLM_GPU_LAYERS", "-1"))  # -1 = all layers to GPU if available
 LLM_TEMPERATURE = float(os.environ.get("ZT_LLM_TEMPERATURE", "0.1"))
 LLM_TOP_P = float(os.environ.get("ZT_LLM_TOP_P", "0.3"))

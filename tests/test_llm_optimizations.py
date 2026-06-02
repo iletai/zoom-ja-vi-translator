@@ -67,6 +67,7 @@ def _make_translator(response_text: str = "Bản dịch thử") -> tuple[LlmTran
     translator._lock = threading.Lock()
     translator._chinese_logit_bias = {}
     translator._vi_grammar = None
+    translator._fast_translator = None
     translator.system_prompt = "test"
     translator.context_sentences = 0
     translator.temperature = 0.1
@@ -370,8 +371,8 @@ class TestBilingualPrompt:
         assert "tiếng Việt" in _DEFAULT_SYSTEM_PROMPT
 
     def test_few_shot_examples_count(self):
-        """Should have 4 few-shot examples including kanji-heavy ones."""
-        assert len(LlmTranslator._FEW_SHOT_EXAMPLES) == 4
+        """Should have 6 few-shot examples covering diverse patterns."""
+        assert len(LlmTranslator._FEW_SHOT_EXAMPLES) == 6
 
     def test_few_shot_includes_kanji_heavy(self):
         """At least one example should have kanji-heavy input."""
