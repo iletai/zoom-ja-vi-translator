@@ -69,8 +69,16 @@ class SentenceAggregator:
         "けれど",
         "けど",
         "という",
+        "ということ",
+        "っていう",
         "ってば",
+        "って感じ",
         "って",
+        "みたいな",
+        "みたいに",
+        "みたいで",
+        "みたい",
+        "ような",
         "ように",
         "ので",
         "のに",
@@ -172,6 +180,32 @@ class SentenceAggregator:
     def is_dangling(self, text: str) -> bool:
         """True if ``text`` is a low-content fragment unsafe to flush alone."""
         return text.strip() in self._DANGLING
+
+    # Connective endings that signal an incomplete thought (sentence was cut off).
+    _CONNECTIVE_ENDINGS = (
+        "だったりで", "たりで", "たりして",
+        "ために", "ためで",
+        "ので", "のに", "から",
+        "けど", "けれど", "けれども",
+        "ながら", "つつ", "たり",
+        "として", "に対して", "について",
+        "によって", "に関して",
+        "だけど", "ですが", "ですけど",
+    )
+
+    def ends_with_connective(self, text: str) -> bool:
+        """True if ``text`` ends with a connective particle (incomplete sentence).
+
+        Unlike :meth:`is_dangling`, this checks the *suffix* of longer text,
+        not just exact short-fragment matches.
+        """
+        text = text.strip()
+        if not text or len(text) < 4:
+            return False
+        for ending in self._CONNECTIVE_ENDINGS:
+            if text.endswith(ending):
+                return True
+        return False
 
     # ─── internals ───────────────────────────────────────────────────────
     def _extract(self, flush: bool) -> list[str]:

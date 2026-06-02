@@ -447,15 +447,30 @@ class LlmTranslator:
                     )
                     translation = ""
                 if not translation:
-                    retry_prompt = (
-                        "<|im_start|>system\n"
-                        "Máy dịch Nhật→Việt. Chỉ xuất bản dịch tiếng Việt. "
-                        "TUYỆT ĐỐI KHÔNG dùng tiếng Trung.<|im_end|>\n"
-                        "<|im_start|>user\n"
-                        f"JA: {processed}<|im_end|>\n"
-                        "<|im_start|>assistant\n"
-                        "VI: "
-                    )
+                    is_fragment = self._is_incomplete_fragment(cleaned)
+                    if is_fragment:
+                        # Incomplete fragment: use a prompt that explicitly
+                        # instructs the model to translate the partial meaning.
+                        retry_prompt = (
+                            "<|im_start|>system\n"
+                            "Máy dịch Nhật→Việt. Câu nhập có thể chưa hoàn chỉnh (bị cắt giữa chừng). "
+                            "Hãy dịch phần nghĩa đã có, thêm '...' ở cuối nếu câu chưa kết thúc. "
+                            "Chỉ xuất bản dịch tiếng Việt. KHÔNG dùng tiếng Trung/Hàn/Thái.<|im_end|>\n"
+                            "<|im_start|>user\n"
+                            f"JA: {processed}<|im_end|>\n"
+                            "<|im_start|>assistant\n"
+                            "VI: "
+                        )
+                    else:
+                        retry_prompt = (
+                            "<|im_start|>system\n"
+                            "Máy dịch Nhật→Việt. Chỉ xuất bản dịch tiếng Việt. "
+                            "TUYỆT ĐỐI KHÔNG dùng tiếng Trung.<|im_end|>\n"
+                            "<|im_start|>user\n"
+                            f"JA: {processed}<|im_end|>\n"
+                            "<|im_start|>assistant\n"
+                            "VI: "
+                        )
                     retry_response = self.llm.create_completion(
                         prompt=retry_prompt,
                         max_tokens=dynamic_max_tokens,
@@ -671,6 +686,34 @@ class LlmTranslator:
     _ARABIC_RE = re.compile(r'[\u0600-\u06FF]')
     # Devanagari / Hindi
     _DEVANAGARI_RE = re.compile(r'[\u0900-\u097F]')
+
+    # Connective/incomplete sentence endings — these indicate the sentence
+    # was cut off mid-thought and needs special handling in the prompt.
+    _FRAGMENT_ENDINGS = (
+        "だったりで", "たりで", "たりして",
+        "ために", "ためで", "ため",
+        "ので", "のに", "から",
+        "けど", "けれど", "けれども",
+        "ながら", "つつ", "たり",
+        "して", "しつつ", "しながら",
+        "として", "に対して", "について",
+        "によって", "に関して",
+        "で", "て", "に",
+    )
+
+    @staticmethod
+    def _is_incomplete_fragment(text: str) -> bool:
+        """Return True if input ends with a connective particle (incomplete sentence)."""
+        text = text.strip()
+        if not text:
+            return False
+        for ending in LlmTranslator._FRAGMENT_ENDINGS:
+            if text.endswith(ending):
+                # Avoid false positive: single-char endings need at least 4 chars
+                if len(ending) <= 1 and len(text) < 4:
+                    continue
+                return True
+        return False
 
     @staticmethod
     def _is_likely_english(text: str) -> bool:

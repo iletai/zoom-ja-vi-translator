@@ -414,6 +414,14 @@ class TranslationPipeline:
                 and idle_sec <= config.OFFLINE_SENTENCE_MAX_WAIT_SEC
             ):
                 return
+            # Give incomplete fragments (ending in connective particles) extra
+            # buffer time — the continuation may arrive in the next VAD segment.
+            if (
+                not force
+                and idle_sec <= config.OFFLINE_SENTENCE_MAX_WAIT_SEC * 2
+                and self._offline_aggregator.ends_with_connective(pending)
+            ):
+                return
             if self._offline_aggregator.is_dangling(pending):
                 return
         for sentence in self._offline_aggregator.flush():
