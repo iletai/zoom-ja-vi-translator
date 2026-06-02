@@ -30,6 +30,7 @@ def _make_translator() -> tuple[LlmTranslator, _DummyLlm]:
     translator.top_p = 0.3
     translator.frequency_penalty = 0.1
     translator.max_tokens = 150
+    translator.n_ctx = 768
     dummy_llm = _DummyLlm()
     translator.llm = dummy_llm
     return translator, dummy_llm

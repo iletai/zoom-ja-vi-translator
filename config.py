@@ -337,7 +337,7 @@ else:
     _LLM_DEFAULT_MODEL = _LLM_3B_FILE
     LLM_MODEL_DIR = _LLM_3B_DIR
 LLM_MODEL_PATH = Path(os.environ.get("ZT_LLM_MODEL", str(_LLM_DEFAULT_MODEL)))
-LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "512"))
+LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "768"))
 # Reserve 2 cores for audio capture + ASR; give the rest to LLM.
 LLM_N_THREADS = int(os.environ.get("ZT_LLM_THREADS", str(max(2, _PHYSICAL_CORES - 2))))
 LLM_N_BATCH = int(os.environ.get("ZT_LLM_BATCH", "512"))

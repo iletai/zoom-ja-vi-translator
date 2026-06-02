@@ -429,20 +429,43 @@ class LlmTranslator:
     def _build_messages(self, text: str) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": self.system_prompt}]
         # Few-shot examples using JA→VI format to establish translation pattern.
-        messages.append({"role": "user", "content": "JA: クラウドの構成を確認します"})
-        messages.append({"role": "assistant", "content": "VI: Tôi sẽ xác nhận cấu trúc Cloud."})
-        messages.append({"role": "user", "content": "JA: 今日deployできますか"})
-        messages.append({"role": "assistant", "content": "VI: Hôm nay có thể deploy không?"})
-        messages.append({"role": "user", "content": "JA: 次のsprintでAPIを修正します"})
-        messages.append({"role": "assistant", "content": "VI: Chúng tôi sẽ sửa API trong sprint tới."})
-        # Skip context for very short inputs — small models tend to repeat
-        # previous translations when the current input is just 1-3 chars.
+        few_shots = [
+            ("JA: クラウドの構成を確認します", "VI: Tôi sẽ xác nhận cấu trúc Cloud."),
+            ("JA: 今日deployできますか", "VI: Hôm nay có thể deploy không?"),
+            ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
+        ]
+
+        # Estimate token budget: reserve space for output within n_ctx.
+        # Rough heuristic: 1 token ≈ 3 chars for mixed CJK/Latin text.
+        max_output_tokens = min(self.max_tokens, max(50, len(text) * 3))
+        token_budget = self.n_ctx - max_output_tokens
+        # System prompt + prefill overhead (~60 tokens)
+        used_tokens = len(self.system_prompt) // 3 + 10
+
+        # Add few-shot examples (trim from end if budget tight)
+        for user_ex, asst_ex in few_shots:
+            cost = (len(user_ex) + len(asst_ex)) // 3 + 6
+            if used_tokens + cost > token_budget - 80:  # leave room for input
+                break
+            messages.append({"role": "user", "content": user_ex})
+            messages.append({"role": "assistant", "content": asst_ex})
+            used_tokens += cost
+
+        # Context history (skip for very short inputs to avoid echo)
         context_line = ""
         if self._keep_context and self._history and len(text) > 4:
             recent = list(self._history)[-self.context_sentences:]
-            context_line = "".join(
-                f"(前: {jp} → {vi})\n" for jp, vi in recent
-            )
+            # Only include context that fits in remaining budget
+            context_parts = []
+            for jp, vi in recent:
+                part = f"(前: {jp} → {vi})\n"
+                cost = len(part) // 3
+                if used_tokens + cost > token_budget - 40:
+                    break
+                context_parts.append(part)
+                used_tokens += cost
+            context_line = "".join(context_parts)
+
         # Current sentence with JA: tag to anchor the translation task.
         user_content = f"{context_line}JA: {text}" if context_line else f"JA: {text}"
         messages.append({"role": "user", "content": user_content})
