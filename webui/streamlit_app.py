@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Make `src`/`webui` importable regardless of where streamlit is launched from.
 _ROOT = Path(__file__).resolve().parent.parent
@@ -48,6 +49,7 @@ class Settings:
 
     log: Path | None
     auto: bool
+    auto_scroll: bool
     interval: int
     tail: int
     query: str
@@ -92,6 +94,7 @@ def _sidebar() -> Settings:
     st.sidebar.divider()
     st.sidebar.subheader("🔄 Live tail")
     auto = st.sidebar.toggle("Auto-refresh", value=True)
+    auto_scroll = st.sidebar.toggle("Auto-scroll to latest", value=True)
     interval = st.sidebar.slider("Refresh every (s)", 1, 10, 2, disabled=not auto)
     tail = st.sidebar.slider("Show last N lines", 10, 500, 80, step=10)
 
@@ -116,6 +119,7 @@ def _sidebar() -> Settings:
     return Settings(
         log=log,
         auto=auto,
+        auto_scroll=auto_scroll,
         interval=interval,
         tail=tail,
         query=query,
@@ -156,6 +160,21 @@ def _render_metrics(stats: dict, latency_threshold_ms: int) -> None:
             st.success("No loss/anomaly events recorded ✓")
 
 
+def _inject_auto_scroll() -> None:
+    """Inject JavaScript to scroll the Streamlit main area to the bottom."""
+    components.html(
+        """
+        <script>
+            const main = window.parent.document.querySelector('section.main');
+            if (main) {
+                main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
+            }
+        </script>
+        """,
+        height=0,
+    )
+
+
 def _render_feed(lines, cfg: Settings) -> None:
     shown = prepare_feed(lines, cfg.query, cfg.tail, cfg.newest_first)
     if not shown:
@@ -180,6 +199,11 @@ def _render_feed(lines, cfg: Settings) -> None:
             )
         parts.append("</div>")
         st.markdown("".join(parts), unsafe_allow_html=True)
+
+    # Auto-scroll the main content area to the bottom so the latest subtitle
+    # is always visible without manual scrolling.
+    if cfg.auto_scroll and not cfg.newest_first:
+        _inject_auto_scroll()
 
 
 def _render_downloads(lines, stem: str) -> None:
