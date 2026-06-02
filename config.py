@@ -350,12 +350,16 @@ LLM_CONTEXT_SENTENCES = int(os.environ.get("ZT_LLM_CONTEXT", "3"))
 LLM_USE_MLOCK = _env_flag("ZT_LLM_MLOCK", False)
 LLM_SYSTEM_PROMPT = os.environ.get(
     "ZT_LLM_PROMPT",
-    "Bạn là phiên dịch viên chuyên nghiệp Nhật-Việt trong meeting IT. "
-    "QUY TẮC: "
-    "1. Chỉ xuất bản dịch tiếng Việt, không giải thích. "
-    "2. Giữ nguyên thuật ngữ tiếng Anh: Cloud, AWS, API, deploy, sprint, IoT, AI, Lambda, EC2, S3. "
-    "3. Dịch ngắn gọn, tự nhiên. Bỏ kính ngữ thừa. "
-    "4. Tên riêng giữ nguyên romaji: Akihabara, Shibuya, Tokyo.",
+    # Bilingual prompt: English first (strongest instruction pathway for Qwen),
+    # then Vietnamese reinforcement.
+    "You are a Japanese-to-Vietnamese translator for IT meetings. "
+    "CRITICAL: Output ONLY Vietnamese using Latin script. "
+    "NEVER use Chinese characters. NEVER use Japanese kana. "
+    "Output exactly ONE line of Vietnamese translation.\n"
+    "Bạn là máy dịch Nhật→Việt. CHỈ xuất tiếng Việt (chữ Latin). "
+    "KHÔNG ĐƯỢC dùng chữ Hán/tiếng Trung. "
+    "Giữ nguyên thuật ngữ IT: Cloud, AWS, API, deploy, sprint, Lambda, EC2, S3. "
+    "Dịch ngắn gọn, tự nhiên. Tên riêng giữ romaji.",
 )
 
 # ─── Cloud backend (optional, --cloud) ──────────────────────────────────

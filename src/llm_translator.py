@@ -32,11 +32,16 @@ except Exception:  # pragma: no cover - fallback for partial environments
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
-    "Bạn là máy dịch Nhật→Việt chuyên IT. "
-    "Nhận tiếng Nhật, xuất ĐÚNG MỘT DÒNG tiếng Việt, không thêm gì khác. "
-    "Giữ nguyên: Cloud, AWS, API, deploy, sprint, IoT, AI, EC2, S3, Lambda. các thuật ngữ trong ngành IT."
-    "Tên riêng giữ romaji: Tokyo, Shibuya, Akihabara."
-    "Bạn tuyệt đối phải trả lời với độ chính xác cao, tin cậy tránh phản hồi sai xót ngoài ngôn ngữ được định nghĩa."
+    # English first — Qwen2.5's strongest instruction-following pathway
+    "You are a Japanese-to-Vietnamese translator for IT meetings. "
+    "CRITICAL: Output ONLY Vietnamese using Latin script. "
+    "NEVER use Chinese characters (漢字/汉字). NEVER use Japanese kana. "
+    "Output exactly ONE line of Vietnamese translation.\n"
+    # Vietnamese reinforcement
+    "Bạn là máy dịch Nhật→Việt. CHỈ xuất tiếng Việt (chữ Latin). "
+    "KHÔNG ĐƯỢC dùng chữ Hán/tiếng Trung/tiếng Nhật. "
+    "Giữ nguyên thuật ngữ IT: Cloud, AWS, API, deploy, sprint, Lambda, EC2, S3. "
+    "Tên riêng giữ romaji."
 )
 
 
@@ -45,6 +50,9 @@ class LlmTranslator:
 
     _FEW_SHOT_EXAMPLES = (
         ("JA: 次のsprintでAPIを修正します", "VI: Chúng tôi sẽ sửa API trong sprint tới."),
+        ("JA: この処理を入れることによってエラーが起きない対応を入れました", "VI: Bằng cách thêm xử lý này, chúng tôi đã thêm biện pháp để không xảy ra lỗi."),
+        ("JA: 今回の件に関してはPRに反映させていただきます", "VI: Về vấn đề lần này, tôi sẽ phản ánh vào PR."),
+        ("JA: 確認作業が完了しました", "VI: Công việc xác nhận đã hoàn thành."),
     )
     _MAX_PROMPT_CONTEXT_SENTENCES = 1
 
@@ -102,10 +110,60 @@ class LlmTranslator:
 
         self.llm = Llama(**llama_kwargs)
 
+        # Build logit bias to penalize Chinese-specific tokens.
+        # This discourages the model from generating Chinese without
+        # completely blocking characters that overlap with Vietnamese Hán-Việt.
+        self._chinese_logit_bias = self._build_chinese_logit_bias()
+
         try:
             self.warmup()
         except Exception as exc:  # pragma: no cover - best-effort latency optimization
             logger.warning("LLM translator warmup failed: %s", exc)
+
+    def _build_chinese_logit_bias(self) -> dict[int, float]:
+        """Build token-level logit bias hard-blocking all CJK-only tokens.
+
+        Iterates the entire model vocabulary and identifies tokens whose decoded
+        text is composed entirely of CJK Unified Ideographs. These get -100.0
+        logit bias (effectively impossible to sample).
+
+        This targets the root cause: Qwen2.5's Chinese prior is attacked at the
+        sampling level, preventing Chinese tokens from ever being generated.
+        Returns empty dict if tokenization fails (graceful degradation).
+        """
+        bias: dict[int, float] = {}
+        try:
+            n_vocab_fn = getattr(self.llm, "n_vocab", None)
+            detokenize_fn = getattr(self.llm, "detokenize", None)
+            if not n_vocab_fn or not detokenize_fn:
+                return {}
+            vocab_size = n_vocab_fn()
+            for token_id in range(vocab_size):
+                try:
+                    raw = detokenize_fn([token_id])
+                    if not raw:
+                        continue
+                    text = raw.decode("utf-8", errors="ignore")
+                    if not text:
+                        continue
+                    # Only consider non-whitespace characters
+                    chars = [c for c in text if not c.isspace()]
+                    if not chars:
+                        continue
+                    # Block if ALL characters are CJK Unified Ideographs
+                    if all(
+                        "\u4E00" <= c <= "\u9FFF"
+                        or "\u3400" <= c <= "\u4DBF"
+                        or "\uF900" <= c <= "\uFAFF"
+                        for c in chars
+                    ):
+                        bias[token_id] = -100.0
+                except Exception:
+                    pass
+            logger.info("CJK logit bias: hard-blocking %d tokens from vocab of %d", len(bias), vocab_size)
+        except Exception as exc:
+            logger.warning("Could not build CJK logit bias: %s", exc)
+        return bias
 
     def translate(self, text: str) -> str:
         """Translate Japanese ``text`` to Vietnamese without raising on failures."""
@@ -144,21 +202,30 @@ class LlmTranslator:
         "うん": "Vâng",
         "うんうん": "Vâng, vâng",
         "うんうんはい": "Vâng, vâng, đúng rồi",
+        "うんうんうん": "Vâng vâng vâng",
         "はい": "Vâng",
         "はいはい": "Vâng, vâng",
+        "はいはいはい": "Vâng vâng vâng",
+        "はいもね": "Vâng, đúng nhỉ",
         "ええ": "Vâng",
         "え": "Ơ",
         "えっと": "À...",
         "あの": "À...",
+        "あのう": "À...",
         "ああ": "À",
         "あ": "À",
         "まあ": "Thôi thì",
         "なるほど": "Ra vậy",
+        "なるほどね": "Ra vậy nhỉ",
         "そうですね": "Đúng vậy nhỉ",
         "そうそう": "Đúng, đúng",
+        "そうそうそう": "Đúng đúng đúng",
         "ですね": "Đúng vậy",
         "っていう": "Nghĩa là",
         "ます": "...",
+        "ねえ": "Này",
+        "ねえねえ": "Này này",
+        "うんねえねえ": "Vâng, này này",
         # ─── Common meeting greetings/phrases (bypass LLM for reliability) ───
         "こんにちは": "Xin chào",
         "こんばんは": "Chào buổi tối",
@@ -432,8 +499,18 @@ class LlmTranslator:
                     top_p=self.top_p,
                     frequency_penalty=self.frequency_penalty,
                     repeat_penalty=1.1,
-                    stop=["\n", "<|im_end|>", "JA:", "JP:", "\nJA:", " Here ", " This is", "I am", "I will", "Let me",
-                          "的", "是", "了", "在", "不", "我们"],
+                    logit_bias=self._chinese_logit_bias or None,
+                    stop=["\n", "<|im_end|>", "JA:", "JP:", "\nJA:",
+                          " Here ", " This is", "I am", "I will", "Let me",
+                          # Chinese function words — stop generation immediately
+                          # if model switches to Chinese
+                          "的", "是", "了", "在", "不", "我们",
+                          "这", "那", "有", "没", "就", "也", "都",
+                          "会", "能", "要", "说", "对", "让", "把",
+                          "被", "给", "从", "还", "很", "到", "过",
+                          "吗", "吧", "呢", "啊", "嗯", "做", "看",
+                          "为", "与", "或", "而", "且", "因", "所",
+                          ],
                 )
                 raw_text = response["choices"][0]["text"] if response.get("choices") else ""
                 logger.debug("LLM raw output for %r: %r", cleaned[:40], raw_text[:120])
@@ -478,8 +555,16 @@ class LlmTranslator:
                         top_p=0.5,
                         frequency_penalty=0.2,
                         repeat_penalty=1.2,
-                        stop=["<|im_end|>", "\n\n", "JA:", "JP:", " Here ", " This is", "I am", "I will", "Let me",
-                              "的", "是", "了", "在", "不", "我们"],
+                        logit_bias=self._chinese_logit_bias or None,
+                        stop=["<|im_end|>", "\n\n", "JA:", "JP:",
+                              " Here ", " This is", "I am", "I will", "Let me",
+                              "的", "是", "了", "在", "不", "我们",
+                              "这", "那", "有", "没", "就", "也", "都",
+                              "会", "能", "要", "说", "对", "让", "把",
+                              "被", "给", "从", "还", "很", "到", "过",
+                              "吗", "吧", "呢", "啊", "嗯", "做", "看",
+                              "为", "与", "或", "而", "且", "因", "所",
+                              ],
                     )
                     raw_retry = (
                         retry_response["choices"][0]["text"]
@@ -899,8 +984,13 @@ class LlmTranslator:
             stripped = LlmTranslator._CJK_RE.sub("", cleaned).strip()
             # Collapse multiple spaces left by removal
             stripped = re.sub(r" {2,}", " ", stripped)
-            # If removing kanji leaves >60% of original length, use the stripped version
-            if len(stripped) > len(cleaned) * 0.5 and len(stripped) > 5:
+            # Accept if stripped result has Vietnamese diacritics (proof it's real VI)
+            has_vi_diacritics = bool(LlmTranslator._VI_DIACRITICS_RE.search(stripped))
+            # If removing kanji leaves useful text, use the stripped version
+            if has_vi_diacritics and len(stripped) >= 1:
+                logger.debug("Stripped stray kanji (VI confirmed): %r -> %r", cleaned[:60], stripped[:60])
+                cleaned = stripped
+            elif len(stripped) > len(cleaned) * 0.4 and len(stripped) > 3:
                 logger.debug("Stripped stray kanji from output: %r -> %r", cleaned[:60], stripped[:60])
                 cleaned = stripped
             else:

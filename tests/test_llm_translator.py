@@ -30,6 +30,7 @@ def _make_translator(response_text: str = "Bản dịch thử") -> tuple[LlmTran
     translator._keep_context = False
     translator._history = deque(maxlen=1)
     translator._lock = threading.Lock()
+    translator._chinese_logit_bias = {}
     translator.system_prompt = "test"
     translator.context_sentences = 0
     translator.temperature = 0.1
