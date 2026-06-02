@@ -1,8 +1,9 @@
-﻿# Chạy translator với Qwen2.5-1.5B LLM (chất lượng tốt nhất cho meeting IT)
+# Chạy translator với Qwen2.5 LLM (chất lượng tốt nhất cho meeting IT)
 # Không cần tham số — chỉ cần chạy: .\run-qwen.ps1
 #
-# Qwen2.5-1.5B: dịch có ngữ cảnh, hiểu thuật ngữ IT tốt hơn NLLB.
-# RAM: ~1.1GB (model) + ~160MB (ASR) = ~1.3GB tổng cộng.
+# Qwen2.5-3B (default): dịch có ngữ cảnh, hiểu thuật ngữ IT tốt hơn NLLB.
+# RAM: ~2.0GB (model) + ~160MB (ASR) = ~2.2GB tổng cộng.
+# Fallback: Qwen2.5-1.5B nếu 3B không có (~1.3GB tổng).
 
 # Cho phép chạy script khi right-click "Run with PowerShell"
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
@@ -53,8 +54,8 @@ if (-not (Test-Path "models\reazonspeech-k2-v2")) {
 $model1p5b = Join-Path $PSScriptRoot "models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
 $model3b = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 if (-not (Test-Path $model1p5b) -and -not (Test-Path $model3b)) {
-    Write-Host "==> Downloading Qwen2.5-1.5B (~0.9 GB)..." -ForegroundColor Yellow
-    python scripts\download_qwen_model.py --size 1.5b
+    Write-Host "==> Downloading Qwen2.5-3B (~1.8 GB)..." -ForegroundColor Yellow
+    python scripts\download_qwen_model.py --size 3b
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Download failed!" -ForegroundColor Red
         exit 1
@@ -80,7 +81,7 @@ if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Forc
 $logFile = Join-Path $logDir "run_${timestamp}.jsonl"
 
 # ─── Banner ───────────────────────────────────────────────────────────────
-$modelName = if (Test-Path $model1p5b) { "Qwen2.5-1.5B" } else { "Qwen2.5-3B" }
+$modelName = if (Test-Path $model3b) { "Qwen2.5-3B" } else { "Qwen2.5-1.5B" }
 Write-Host ""
 Write-Host "  ========================================" -ForegroundColor Cyan
 Write-Host "   Zoom JA->VI Translator [Qwen LLM]" -ForegroundColor Cyan
