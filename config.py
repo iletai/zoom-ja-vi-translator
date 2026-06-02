@@ -372,6 +372,10 @@ AZURE_SPEECH_REGION = os.environ.get("AZURE_SPEECH_REGION", "")
 
 # ─── Display ─────────────────────────────────────────────────────────────
 USE_COLOR = True
+# Automatically scroll the terminal viewport to the latest output whenever new
+# subtitle text is printed. Useful for real-time monitoring — prevents the view
+# from "sticking" when you accidentally scroll up during a meeting.
+AUTO_SCROLL = _env_flag("ZT_AUTO_SCROLL", default=True)
 
 # ─── Evidence logging (opt-in, for debugging dropped data) ───────────────
 # When set (env ZT_EVIDENCE_LOG=<path> or --log <path>), every pipeline stage

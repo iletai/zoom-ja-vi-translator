@@ -1,6 +1,8 @@
 """Terminal display for bilingual Japanese/Vietnamese subtitles."""
 from __future__ import annotations
 
+import ctypes
+import ctypes.wintypes
 import logging
 import shutil
 import sys
@@ -23,6 +25,63 @@ def _color_enabled() -> bool:
     return bool(config.USE_COLOR) and sys.stdout.isatty()
 
 
+# ─── Windows Console auto-scroll helper ──────────────────────────────────
+# When the user scrolls up in a Windows terminal, new output is written at
+# the bottom of the buffer but the viewport stays put. This helper forces
+# the viewport to follow the cursor so the latest subtitle is always visible.
+
+_STD_OUTPUT_HANDLE = -11
+
+
+class _COORD(ctypes.Structure):
+    _fields_ = [("X", ctypes.wintypes.SHORT), ("Y", ctypes.wintypes.SHORT)]
+
+
+class _SMALL_RECT(ctypes.Structure):
+    _fields_ = [
+        ("Left", ctypes.wintypes.SHORT),
+        ("Top", ctypes.wintypes.SHORT),
+        ("Right", ctypes.wintypes.SHORT),
+        ("Bottom", ctypes.wintypes.SHORT),
+    ]
+
+
+class _CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", _COORD),
+        ("dwCursorPosition", _COORD),
+        ("wAttributes", ctypes.wintypes.WORD),
+        ("srWindow", _SMALL_RECT),
+        ("dwMaximumWindowSize", _COORD),
+    ]
+
+
+def _scroll_to_bottom() -> None:
+    """Scroll the console viewport so the cursor (latest output) is visible."""
+    if sys.platform != "win32" or not sys.stdout.isatty():
+        return
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(_STD_OUTPUT_HANDLE)
+        csbi = _CONSOLE_SCREEN_BUFFER_INFO()
+        if not kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(csbi)):
+            return
+        window_height = csbi.srWindow.Bottom - csbi.srWindow.Top
+        cursor_y = csbi.dwCursorPosition.Y
+        # Only scroll if the cursor is below the current viewport
+        if cursor_y > csbi.srWindow.Bottom:
+            new_top = cursor_y - window_height
+            rect = _SMALL_RECT(
+                csbi.srWindow.Left,
+                ctypes.wintypes.SHORT(new_top),
+                csbi.srWindow.Right,
+                ctypes.wintypes.SHORT(cursor_y),
+            )
+            kernel32.SetConsoleWindowInfo(handle, True, ctypes.byref(rect))
+    except Exception:
+        pass
+
+
 class SubtitleDisplay:
     """Thread-safe terminal printer for translated subtitle pairs."""
 
@@ -30,6 +89,7 @@ class SubtitleDisplay:
         self._lock = threading.Lock()
         self._color = _color_enabled()
         self._isatty = sys.stdout.isatty()
+        self._auto_scroll = bool(config.AUTO_SCROLL) and self._isatty
         # True while an in-progress streaming partial is sitting on the current
         # terminal line (printed without a newline). Any method that prints a
         # committed line must clear it first so the two don't run together.
@@ -38,6 +98,11 @@ class SubtitleDisplay:
         # paired target printed. Lets show_target keep the JP/VI pair together
         # even when batching prints several sources before the first translation.
         self._last_source_seq: int | None = None
+
+    def _maybe_scroll(self) -> None:
+        """Scroll terminal viewport to latest output if auto-scroll is enabled."""
+        if self._auto_scroll:
+            _scroll_to_bottom()
 
     @staticmethod
     def _char_width(ch: str) -> int:
@@ -103,6 +168,7 @@ class SubtitleDisplay:
         with self._lock:
             print(f"{self._clear_partial()}\n{header}\n{jp_line}\n{vi_line}", flush=True)
             self._last_source_seq = None
+            self._maybe_scroll()
 
     def show_pair(self, japanese: str, vietnamese: str) -> None:
         """Atomically print one committed Japanese -> Vietnamese subtitle pair."""
@@ -115,6 +181,7 @@ class SubtitleDisplay:
             clear = self._clear_partial()
             print(f"{clear}\n{header}\n{jp_line}\n{vi_line}", flush=True)
             self._last_source_seq = None
+            self._maybe_scroll()
 
     def show_source(self, japanese: str, seq: int | None = None) -> None:
         """Print the recognized Japanese immediately, before translation is ready."""
@@ -125,6 +192,7 @@ class SubtitleDisplay:
         with self._lock:
             print(f"{self._clear_partial()}\n{header}\n{jp_line}", flush=True)
             self._last_source_seq = seq
+            self._maybe_scroll()
 
     def show_target(
         self, vietnamese: str, japanese: str | None = None, seq: int | None = None
@@ -144,6 +212,7 @@ class SubtitleDisplay:
             else:
                 print(f"{self._clear_partial()}{vi_line}", flush=True)
             self._last_source_seq = None
+            self._maybe_scroll()
 
     @classmethod
     def _truncate_segments(cls, committed: str, tail: str, max_width: int) -> tuple[str, str, str]:
@@ -189,6 +258,7 @@ class SubtitleDisplay:
             # \r returns to column 0; \033[K clears to end of line.
             print(f"\r\033[K  {jp_line}", end="", flush=True)
             self._partial_active = True
+            self._maybe_scroll()
 
     def finalize_source(self, japanese: str) -> None:
         """Commit the streamed Japanese line (print the final text + newline)."""
@@ -199,6 +269,7 @@ class SubtitleDisplay:
             # Clear the in-progress partial line, then print the committed pair.
             print(f"{self._clear_partial()}{header}\n{jp_line}", flush=True)
             self._last_source_seq = None
+            self._maybe_scroll()
 
     def info(self, message: str) -> None:
         """Print a status/diagnostic line."""
@@ -207,3 +278,4 @@ class SubtitleDisplay:
             text = self._wrap(message, _DIM) if self._color else message
             print(f"{self._clear_partial()}{text}", flush=True)
             self._last_source_seq = None
+            self._maybe_scroll()
