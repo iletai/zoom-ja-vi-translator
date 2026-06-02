@@ -115,21 +115,25 @@ class LlmTranslator:
         # completely blocking characters that overlap with Vietnamese Hán-Việt.
         self._chinese_logit_bias = self._build_chinese_logit_bias()
 
+        # Optionally build GBNF grammar for hard Latin-only output constraint.
+        self._vi_grammar = self._build_vi_grammar()
+
         try:
             self.warmup()
         except Exception as exc:  # pragma: no cover - best-effort latency optimization
             logger.warning("LLM translator warmup failed: %s", exc)
 
     def _build_chinese_logit_bias(self) -> dict[int, float]:
-        """Build token-level logit bias hard-blocking all CJK-only tokens.
+        """Build token-level logit bias hard-blocking CJK and Japanese kana tokens.
 
         Iterates the entire model vocabulary and identifies tokens whose decoded
-        text is composed entirely of CJK Unified Ideographs. These get -100.0
-        logit bias (effectively impossible to sample).
+        text is composed entirely of:
+        - CJK Unified Ideographs (Chinese characters / kanji)
+        - Hiragana or Katakana (Japanese-specific)
 
-        This targets the root cause: Qwen2.5's Chinese prior is attacked at the
-        sampling level, preventing Chinese tokens from ever being generated.
-        Returns empty dict if tokenization fails (graceful degradation).
+        These get -100.0 logit bias (effectively impossible to sample).
+        This targets the root cause: prevents both Chinese AND Japanese echo
+        from being generated. Returns empty dict on failure (graceful degradation).
         """
         bias: dict[int, float] = {}
         try:
@@ -150,20 +154,53 @@ class LlmTranslator:
                     chars = [c for c in text if not c.isspace()]
                     if not chars:
                         continue
-                    # Block if ALL characters are CJK Unified Ideographs
+                    # Block if ALL characters are CJK/Hiragana/Katakana
                     if all(
-                        "\u4E00" <= c <= "\u9FFF"
-                        or "\u3400" <= c <= "\u4DBF"
-                        or "\uF900" <= c <= "\uFAFF"
+                        "\u4E00" <= c <= "\u9FFF"       # CJK Unified Ideographs
+                        or "\u3400" <= c <= "\u4DBF"    # CJK Extension A
+                        or "\uF900" <= c <= "\uFAFF"    # CJK Compatibility
+                        or "\u3040" <= c <= "\u309F"    # Hiragana
+                        or "\u30A0" <= c <= "\u30FF"    # Katakana
+                        or "\u3000" <= c <= "\u303F"    # CJK Symbols/Punctuation
                         for c in chars
                     ):
                         bias[token_id] = -100.0
                 except Exception:
                     pass
-            logger.info("CJK logit bias: hard-blocking %d tokens from vocab of %d", len(bias), vocab_size)
+            logger.info("CJK/kana logit bias: hard-blocking %d tokens from vocab of %d", len(bias), vocab_size)
         except Exception as exc:
             logger.warning("Could not build CJK logit bias: %s", exc)
         return bias
+
+    def _build_vi_grammar(self):
+        """Build GBNF grammar constraining output to Latin/Vietnamese chars only.
+
+        Only active when config.LLM_USE_GRAMMAR is True. Provides a hard guarantee
+        against CJK output at the cost of ~10-30ms extra latency per token.
+        """
+        if not getattr(config, "LLM_USE_GRAMMAR", False):
+            return None
+        try:
+            from llama_cpp import LlamaGrammar
+        except ImportError:
+            logger.debug("LlamaGrammar not available, skipping grammar constraint")
+            return None
+        # GBNF grammar: allow Latin, Vietnamese diacritics, digits, punctuation, spaces
+        gbnf = r'''
+root ::= token+
+token ::= vichar | space | punct | digit
+vichar ::= [a-zA-Z\u00C0-\u024F\u1E00-\u1EFF]
+space ::= [ \t]
+punct ::= [.,;:!?\-'"()\[\]{}/\\@#$%&*+=_~<>|]
+digit ::= [0-9]
+'''
+        try:
+            grammar = LlamaGrammar.from_string(gbnf.strip())
+            logger.info("GBNF Vietnamese grammar constraint enabled")
+            return grammar
+        except Exception as exc:
+            logger.warning("Failed to build GBNF grammar: %s", exc)
+            return None
 
     def translate(self, text: str) -> str:
         """Translate Japanese ``text`` to Vietnamese without raising on failures."""
@@ -500,6 +537,7 @@ class LlmTranslator:
                     frequency_penalty=self.frequency_penalty,
                     repeat_penalty=1.1,
                     logit_bias=self._chinese_logit_bias or None,
+                    grammar=self._vi_grammar,
                     stop=["\n", "<|im_end|>", "JA:", "JP:", "\nJA:",
                           " Here ", " This is", "I am", "I will", "Let me",
                           # Chinese function words — stop generation immediately
@@ -556,6 +594,7 @@ class LlmTranslator:
                         frequency_penalty=0.2,
                         repeat_penalty=1.2,
                         logit_bias=self._chinese_logit_bias or None,
+                        grammar=self._vi_grammar,
                         stop=["<|im_end|>", "\n\n", "JA:", "JP:",
                               " Here ", " This is", "I am", "I will", "Let me",
                               "的", "是", "了", "在", "不", "我们",

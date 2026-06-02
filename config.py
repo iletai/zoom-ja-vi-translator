@@ -348,6 +348,10 @@ LLM_FREQUENCY_PENALTY = float(os.environ.get("ZT_LLM_FREQ_PENALTY", "0.1"))
 LLM_MAX_TOKENS = int(os.environ.get("ZT_LLM_MAX_TOKENS", "150"))
 LLM_CONTEXT_SENTENCES = int(os.environ.get("ZT_LLM_CONTEXT", "3"))
 LLM_USE_MLOCK = _env_flag("ZT_LLM_MLOCK", False)
+# Enable GBNF grammar to hard-constrain output to Latin/Vietnamese characters only.
+# This provides a 100% guarantee against CJK output but adds ~10-30ms latency per token.
+# The logit_bias approach (always active) is usually sufficient; enable this as extra safety.
+LLM_USE_GRAMMAR = _env_flag("ZT_LLM_GRAMMAR", False)
 LLM_SYSTEM_PROMPT = os.environ.get(
     "ZT_LLM_PROMPT",
     # Bilingual prompt: English first (strongest instruction pathway for Qwen),
