@@ -11,6 +11,7 @@ bound end-to-end latency:
 """
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 from time import monotonic
@@ -26,6 +27,8 @@ from src.translator import NllbTranslator, join_translations
 # LLM translator is imported lazily to avoid ImportError when llama-cpp-python
 # is not installed and the user is using the default NLLB backend.
 from src.vad import VadSegmenter
+
+logger = logging.getLogger(__name__)
 
 
 # Sentinel pushed onto the segment queue to tell the offline re-decode worker the
@@ -89,9 +92,11 @@ class TranslationPipeline:
 
         if self.cloud:
             self.display.info(f"Connecting to cloud backend ({backend})...")
+            logger.info("Initializing cloud backend: %s", backend)
             translator_cls = self._cloud_translator_class(backend)
             self.cloud_translator = translator_cls(self.display, on_fatal=self._on_cloud_fatal)
             self.display.info("Cloud backend ready.")
+            logger.info("Cloud backend ready")
             self._capture = AudioCapture(self.device, self._audio_queue, self.stop_event)
             self._asr_thread = threading.Thread(target=self._cloud_worker, daemon=True)
             self._translate_thread = None
@@ -99,6 +104,7 @@ class TranslationPipeline:
 
         backend_label = "LLM/Qwen2.5" if config.TRANSLATOR_BACKEND == "llm" else "NLLB"
         self.display.info(f"Loading models (ASR + {backend_label} translator)...")
+        logger.info("Loading models: ASR + %s translator", backend_label)
         # Load ASR first (small ~160MB) before the heavier translator so that
         # on memory-constrained systems the combined peak stays below physical RAM.
         if self.streaming:
@@ -196,6 +202,7 @@ class TranslationPipeline:
                 # Empty branch, so also check the idle flush after each block.
                 self._flush_offline_aggregator_if_due()
             except Exception as exc:  # keep the pipeline alive on a single bad block
+                logger.error("ASR worker error: %s", exc, exc_info=True)
                 self.display.info(f"[ASR error] {exc}")
 
     def _streaming_asr_worker(self) -> None:
@@ -252,6 +259,7 @@ class TranslationPipeline:
                     if not self._redecode:
                         self._flush_streaming_aggregator_if_due()
                 except Exception as exc:  # keep the pipeline alive on a single bad block
+                    logger.error("Streaming ASR worker error: %s", exc, exc_info=True)
                     self.display.info(f"[ASR error] {exc}")
         finally:
             if self._redecode:
@@ -354,6 +362,7 @@ class TranslationPipeline:
         japanese = self.asr.transcribe(utterance).strip()
         if not japanese:
             return
+        logger.debug("ASR final: %s (%d chars)", japanese, len(japanese))
         ev.log("asr_final", text=japanese, n_chars=len(japanese))
         if self._offline_aggregator is None:
             # Legacy: translate each VAD segment independently. Show the recognized
@@ -504,23 +513,27 @@ class TranslationPipeline:
                 # A dead translate thread stops draining _text_queue, which makes
                 # _enqueue_text backpressure-block the ASR worker forever and lose
                 # the rest of the meeting — so never let a batch kill the loop.
+                logger.error("Translate batch error: %s", exc, exc_info=True)
                 self.display.info(f"[Translate error] {exc}")
                 for seq, jp, _ in batch:
                     ev.log("translate_error", seq=seq, text=jp, error=str(exc))
 
     def _translate_and_display_batch(self, batch: list[tuple[int, str, bool]]) -> None:
         started = monotonic()
+        logger.debug("Translating batch of %d item(s)", len(batch))
         try:
             translations = self._translate_batch_flattened(batch)
         except Exception as exc:
             # Fall back to per-item translation so one bad item cannot drop the
             # whole batch; a still-failing item is logged and shown as "(...)".
+            logger.error("Batch translation failed, falling back to per-item: %s", exc, exc_info=True)
             self.display.info(f"[Translate error] {exc}")
             translations = []
             for seq, jp, _ in batch:
                 try:
                     translations.append(self.translator.translate(jp).strip())
                 except Exception as item_exc:
+                    logger.error("Per-item translate failed seq=%d: %s", seq, item_exc)
                     ev.log("translate_error", seq=seq, text=jp, error=str(item_exc))
                     translations.append("")
         # Guard against any translation/source count mismatch: zip() would
@@ -532,8 +545,10 @@ class TranslationPipeline:
                        got=len(translations), expected=len(batch))
             translations = translations + [""] * (len(batch) - len(translations))
         latency_ms = round((monotonic() - started) * 1000.0, 1)
+        logger.info("Translated batch(%d) in %.1fms", len(batch), latency_ms)
 
         for (seq, japanese, pre_shown), vietnamese in zip(batch, translations):
+            logger.debug("seq=%d JP: %s -> VI: %s", seq, japanese, vietnamese)
             ev.log(
                 "translate",
                 seq=seq,

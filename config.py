@@ -383,6 +383,14 @@ AUTO_SCROLL = _env_flag("ZT_AUTO_SCROLL", default=True)
 # where a sentence was lost (queue_drop / dedup_skip / translate / display).
 EVIDENCE_LOG_PATH = os.environ.get("ZT_EVIDENCE_LOG", "")
 
+# ─── Debug log ────────────────────────────────────────────────────────────
+# Full debug log capturing ALL events: inputs, outputs, errors, warnings.
+# Always enabled; written to LOG_DIR with timestamped filename. Use for
+# post-session analytics and troubleshooting.
+LOG_DIR = Path(os.environ.get("ZT_LOG_DIR", str(PROJECT_ROOT / "logs")))
+# Log level for the file handler. DEBUG captures everything; INFO is less noisy.
+LOG_LEVEL = os.environ.get("ZT_LOG_LEVEL", "DEBUG").upper()
+
 # ─── Shutdown ────────────────────────────────────────────────────────────
 # Generous join timeout so an in-flight native ASR/translation call can finish
 # before the process exits (a native call interrupted by interpreter teardown

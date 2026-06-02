@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import glob
+import logging
 import os
 from pathlib import Path
 
@@ -9,6 +10,8 @@ import numpy as np
 import sherpa_onnx
 
 import config
+
+logger = logging.getLogger(__name__)
 
 
 class JapaneseASR:
@@ -47,12 +50,15 @@ class JapaneseASR:
         if audio.size == 0:
             return ""
 
+        duration_s = audio.size / self.SAMPLE_RATE
         is_silence = bool(np.max(np.abs(audio)) <= self.SILENCE_THRESHOLD)
         stream = self.recognizer.create_stream()
         stream.accept_waveform(self.SAMPLE_RATE, audio)
         self.recognizer.decode_stream(stream)
 
         text = getattr(stream.result, "text", "").strip()
+        if text and not is_silence:
+            logger.debug("Transcribed %.2fs audio -> %s", duration_s, text)
         return "" if is_silence else text
 
     def warmup(self) -> None:

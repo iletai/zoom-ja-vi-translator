@@ -166,10 +166,15 @@ def _configure_evidence_log(args: argparse.Namespace, display: SubtitleDisplay):
 
 
 def _configure_file_logging(log_path: str | None) -> None:
-    """Set up Python logging to write all warnings/errors to a .log file.
+    """Set up Python logging to write all events to a .log file.
 
-    The log file is placed alongside the evidence JSONL (same name, .log ext).
-    If no evidence log path is set, uses a default timestamped file.
+    Always creates a comprehensive log capturing DEBUG+ messages from all modules
+    for post-session analytics and debugging. The log includes: audio input events,
+    ASR transcription results, translation I/O, errors, warnings, and pipeline state.
+
+    Log location:
+    - If an evidence log path is set, a .log file is placed alongside it.
+    - Otherwise, logs go to config.LOG_DIR (default: <project>/logs/).
     """
     import pathlib
     import time
@@ -177,19 +182,23 @@ def _configure_file_logging(log_path: str | None) -> None:
     if log_path:
         log_file = pathlib.Path(log_path).with_suffix(".log")
     else:
-        evidence_dir = config.PROJECT_ROOT / "test_audio" / "evidence"
-        evidence_dir.mkdir(parents=True, exist_ok=True)
-        log_file = evidence_dir / f"run_{time.strftime('%Y%m%d_%H%M%S')}.log"
+        log_dir = pathlib.Path(config.LOG_DIR)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"session_{time.strftime('%Y%m%d_%H%M%S')}.log"
 
-    # Configure root logger: DEBUG+ to file, WARNING+ to stderr
+    # Resolve the configured log level (default: DEBUG)
+    level_name = getattr(config, "LOG_LEVEL", "DEBUG")
+    file_level = getattr(logging, level_name, logging.DEBUG)
+
+    # Configure root logger: capture everything
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
-    # File handler — capture everything (DEBUG+)
+    # File handler — capture all events for post-session analysis
     fh = logging.FileHandler(str(log_file), encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
+    fh.setLevel(file_level)
     fh.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        "%(asctime)s.%(msecs)03d [%(levelname)-7s] %(name)s (%(threadName)s): %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     ))
     root.addHandler(fh)
@@ -200,6 +209,15 @@ def _configure_file_logging(log_path: str | None) -> None:
     ch.setLevel(logging.CRITICAL)  # effectively silent
     ch.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
     root.addHandler(ch)
+
+    # Log session start metadata
+    logging.info("=" * 70)
+    logging.info("SESSION START: %s", time.strftime("%Y-%m-%d %H:%M:%S"))
+    logging.info("Log file: %s", log_file)
+    logging.info("Python: %s", sys.version)
+    logging.info("Platform: %s", sys.platform)
+    logging.info("Translator backend: %s", getattr(config, "TRANSLATOR_BACKEND", "unknown"))
+    logging.info("=" * 70)
 
 
 def _save_transcript(log_path, display: SubtitleDisplay) -> None:

@@ -1,12 +1,15 @@
 """Voice activity based utterance segmentation for real-time audio streams."""
 from __future__ import annotations
 
+import logging
 from collections import deque
 from typing import Optional
 
 import numpy as np
 
 import config
+
+logger = logging.getLogger(__name__)
 
 # Minimum silence run used as a safe min-cut boundary at max utterance length.
 VAD_MINCUT_SILENCE_MS = 90

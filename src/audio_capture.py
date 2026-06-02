@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 
@@ -8,6 +9,8 @@ import soundcard as sc
 
 import config
 from src import evidence_log as ev
+
+logger = logging.getLogger(__name__)
 
 
 _LOOPBACK_NAME_HINTS = (
@@ -79,6 +82,10 @@ class AudioCapture(threading.Thread):
         try:
             source_rate = _native_sample_rate(self.device)
             block_frames = max(1, int(round(source_rate * config.CAPTURE_BLOCK_SECONDS)))
+            logger.info(
+                "Audio capture started: device=%s rate=%d block_frames=%d",
+                _device_name(self.device), source_rate, block_frames,
+            )
 
             # NOTE: do not pass our large read size as ``blocksize``. ``blocksize``
             # is the hardware buffer period, which CoreAudio caps at 512 frames;
@@ -92,6 +99,7 @@ class AudioCapture(threading.Thread):
                     resampled = _resample_linear(mono, source_rate, int(config.SAMPLE_RATE))
                     self._put_drop_oldest(resampled)
         except Exception as exc:
+            logger.error("Audio capture fatal error: %s", exc, exc_info=True)
             ev.log("audio_capture_error", error=str(exc))
             self.error = exc
             self.stop_event.set()

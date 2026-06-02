@@ -10,6 +10,7 @@ one utterance ends so the translator can run on a complete sentence.
 from __future__ import annotations
 
 import glob
+import logging
 import os
 from pathlib import Path
 
@@ -23,6 +24,8 @@ except ModuleNotFoundError:
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     import config
+
+logger = logging.getLogger(__name__)
 
 
 class StreamingJapaneseASR:

@@ -20,6 +20,7 @@ wiring so they can be unit-tested without a network connection or API key.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Callable
 
@@ -27,6 +28,8 @@ import numpy as np
 
 import config
 from src.display import SubtitleDisplay
+
+logger = logging.getLogger(__name__)
 
 
 def float32_to_pcm16(samples: np.ndarray) -> bytes:
