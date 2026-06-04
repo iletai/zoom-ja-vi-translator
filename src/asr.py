@@ -53,10 +53,13 @@ class JapaneseASR:
         duration_s = audio.size / self.SAMPLE_RATE
         is_silence = bool(np.max(np.abs(audio)) <= self.SILENCE_THRESHOLD)
         stream = self.recognizer.create_stream()
-        stream.accept_waveform(self.SAMPLE_RATE, audio)
-        self.recognizer.decode_stream(stream)
+        try:
+            stream.accept_waveform(self.SAMPLE_RATE, audio)
+            self.recognizer.decode_stream(stream)
+            text = getattr(stream.result, "text", "").strip()
+        finally:
+            del stream  # explicit dealloc: sherpa-onnx C++ frees native tensors
 
-        text = getattr(stream.result, "text", "").strip()
         if text and not is_silence:
             logger.debug("Transcribed %.2fs audio -> %s", duration_s, text)
         return "" if is_silence else text

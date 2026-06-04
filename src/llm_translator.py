@@ -169,8 +169,9 @@ class LlmTranslator:
         # Enable RAM cache for KV state reuse across calls
         try:
             from llama_cpp import LlamaRAMCache
-            self.llm.set_cache(LlamaRAMCache(capacity_bytes=512 * 1024 * 1024))
-            logger.info("LlamaRAMCache enabled (512MB)")
+            cache_mb = max(64, config.LLM_RAM_CACHE_MB)
+            self.llm.set_cache(LlamaRAMCache(capacity_bytes=cache_mb * 1024 * 1024))
+            logger.info("LlamaRAMCache enabled (%dMB)", cache_mb)
         except (ImportError, AttributeError, Exception) as exc:
             logger.debug("LlamaRAMCache not available: %s", exc)
 

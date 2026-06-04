@@ -22,6 +22,7 @@ from src.asr import JapaneseASR
 from src.audio_capture import AudioCapture
 from src.display import SubtitleDisplay
 from src.local_agreement import LocalAgreementBuffer
+from src.post_correction import post_correct
 from src.sentence_aggregator import SentenceAggregator, split_japanese_sentences
 from src.translator import NllbTranslator, join_translations
 # LLM translator is imported lazily to avoid ImportError when llama-cpp-python
@@ -362,6 +363,7 @@ class TranslationPipeline:
         japanese = self.asr.transcribe(utterance).strip()
         if not japanese:
             return
+        japanese = post_correct(japanese)
         logger.debug("ASR final: %s (%d chars)", japanese, len(japanese))
         ev.log("asr_final", text=japanese, n_chars=len(japanese))
         if self._offline_aggregator is None:
@@ -676,6 +678,13 @@ class TranslationPipeline:
 
     def run_forever(self) -> None:
         """Block until interrupted, surfacing capture errors if they occur."""
+        from src.mem_guard import MemoryMonitor
+
+        mem_monitor = MemoryMonitor(
+            text_queue=self._text_queue,
+            audio_queue=self._audio_queue,
+        )
+        mem_monitor.start()
         interrupted = False
         try:
             self.start()
@@ -687,6 +696,7 @@ class TranslationPipeline:
         except KeyboardInterrupt:
             interrupted = True
         finally:
+            mem_monitor.stop()
             # On Ctrl+C, skip the trailing flush so a blocking model call can't
             # hang shutdown; on a normal stop, flush to keep the last words.
             self.stop(flush_tail=not interrupted)
@@ -804,6 +814,8 @@ class TranslationPipeline:
             else:
                 tail = self.segmenter.flush()
                 tail_text = self.asr.transcribe(tail).strip() if tail is not None else ""
+                if tail_text:
+                    tail_text = post_correct(tail_text)
                 # Drain the offline sentence aggregator too: a buffered fragment
                 # lives only in the aggregator (not the text queue), so a normal
                 # stop must flush it or the last words are lost.

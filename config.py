@@ -277,17 +277,17 @@ NLLB_INTRA_THREADS = int(
 )
 NLLB_COMPUTE_TYPE = "int8"
 NLLB_MAX_INPUT_LENGTH = 512
-# 350 (target tokens) is a safety cap, not a target: Vietnamese is more verbose
-# than Japanese, so long compound sentences could clip at the old 256.
-NLLB_MAX_DECODING_LENGTH = 350
+# 128 target tokens safely covers JP→VI (ratio ~1:1.2). The old value of 350
+# caused worst-case latency spikes from repetition loops; now capped tighter.
+NLLB_MAX_DECODING_LENGTH = int(os.environ.get("ZT_NLLB_MAX_DECODE", "128"))
 # Anti-repetition / quality knobs applied to CTranslate2 decoding. These fix the
 # observed "Tôi xin xin" short loops, dropped trailing words, and empty outputs:
 #   - no_repeat_ngram_size: forbid repeating any n-gram of this size without
 #     blocking legitimate repeated bigrams such as Vietnamese reduplication
 #   - repetition_penalty: >1.0 discourages re-emitting recent tokens
 #   - min_decoding_length: force at least this many target tokens (avoids "")
-NLLB_NO_REPEAT_NGRAM_SIZE = 3
-NLLB_REPETITION_PENALTY = 1.1
+NLLB_NO_REPEAT_NGRAM_SIZE = 4
+NLLB_REPETITION_PENALTY = 1.2
 # 1: with accurate offline ASR, short back-channels (はい→"Vâng") no longer need
 # padding to a 2-token minimum (which previously forced filler like "Vâng vâng").
 NLLB_MIN_DECODING_LENGTH = 1
@@ -308,12 +308,43 @@ TRANSLATE_MAX_BATCH = int(os.environ.get("TRANSLATE_MAX_BATCH", "8"))
 # through reliably. Verified per-entry against the real model; only add an entry
 # after confirming it improves output (see test_audio/evidence/).
 NLLB_GLOSSARY = {
+    # Geographic / loanword (original entries, verified)
     "新幹線": "tàu Shinkansen",
     "北海道": "tỉnh Hokkaido",
     "箱根": "Hakone",
     "ヤンバルクイナ": "chim Yanbaru kuina",
     "ポッドキャスト": "podcast",
     "テーマ": "chủ đề",
+    # IT / Cloud Architecture (from 2024-06-04 audit)
+    "クロステナント": "cross-tenant",
+    "マルチテナント": "multi-tenant",
+    "テナント": "tenant",
+    "パーミッション": "permission",
+    "ユースケース": "use case",
+    "テスト環境": "môi trường test",
+    "本番環境": "môi trường production",
+    "ステージング": "staging",
+    "マイグレーション": "migration",
+    "デプロイ": "deploy",
+    "ロールベース": "role-based",
+    "マイクロサービス": "microservice",
+    # Rescue / Emergency Dispatch (救急搬送システム domain)
+    "救急搬送": "vận chuyển cấp cứu",
+    "搬送者": "bệnh nhân được vận chuyển",
+    "搬送先": "nơi tiếp nhận",
+    "搬送元": "nơi chuyển đi",
+    "救急隊": "đội cứu thương",
+    "消防署": "trạm cứu hỏa",
+    "消防": "cứu hỏa",
+    "傷病者": "nạn nhân",
+    "多数傷病者": "đa nạn nhân",
+    "引き継ぎ": "bàn giao",
+    "交渉状態": "trạng thái liên hệ",
+    "交渉履歴": "lịch sử liên hệ",
+    "交渉開始": "bắt đầu liên hệ",
+    "出動": "xuất động",
+    "受入": "tiếp nhận",
+    "病院連携": "liên kết bệnh viện",
 }
 
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
@@ -338,6 +369,9 @@ else:
     LLM_MODEL_DIR = _LLM_1P5B_DIR
 LLM_MODEL_PATH = Path(os.environ.get("ZT_LLM_MODEL", str(_LLM_DEFAULT_MODEL)))
 LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "512"))
+# LLM RAM cache capacity in MB. The LlamaRAMCache stores KV state for prompt
+# prefix reuse. Lower values reduce peak RSS on memory-constrained systems.
+LLM_RAM_CACHE_MB = int(os.environ.get("ZT_LLM_CACHE_MB", "256"))
 # Reserve 2 cores for audio capture + ASR; give the rest to LLM.
 LLM_N_THREADS = int(os.environ.get("ZT_LLM_THREADS", str(max(2, _PHYSICAL_CORES - 2))))
 LLM_N_BATCH = int(os.environ.get("ZT_LLM_BATCH", "512"))
