@@ -49,7 +49,7 @@ CONTEXT_CORRECTIONS: list[tuple[re.Pattern, str, str]] = [
     # スケース → ユースケース only when NOT preceded by ユー
     (re.compile(r"(?<!ユー)スケース"), "スケース", "ユースケース"),
     # 祖母 → 消防 when in dispatch/fire context (followed by system terms)
-    (re.compile(r"祖母(?=の|署|隊|車|局)"), "祖母", "消防"),
+    (re.compile(r"祖母(?=の|署|隊|車|局|側|が)"), "祖母", "消防"),
     # 昭和 → 消防 when NOT followed by era markers
     (re.compile(r"昭和(?!年|時代|[0-9０-９])"), "昭和", "消防"),
 ]
