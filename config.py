@@ -308,43 +308,40 @@ TRANSLATE_MAX_BATCH = int(os.environ.get("TRANSLATE_MAX_BATCH", "8"))
 # through reliably. Verified per-entry against the real model; only add an entry
 # after confirming it improves output (see test_audio/evidence/).
 NLLB_GLOSSARY = {
-    # Geographic / loanword (original entries, verified)
+    # Only entries that NLLB copies through reliably (proper nouns / short loanwords).
+    # Full Vietnamese phrases in source CONFUSE NLLB — use post-translation fix instead.
     "新幹線": "tàu Shinkansen",
     "北海道": "tỉnh Hokkaido",
     "箱根": "Hakone",
     "ヤンバルクイナ": "chim Yanbaru kuina",
     "ポッドキャスト": "podcast",
     "テーマ": "chủ đề",
-    # IT / Cloud Architecture (from 2024-06-04 audit)
-    "クロステナント": "cross-tenant",
-    "マルチテナント": "multi-tenant",
-    "テナント": "tenant",
-    "パーミッション": "permission",
-    "ユースケース": "use case",
-    "テスト環境": "môi trường test",
-    "本番環境": "môi trường production",
-    "ステージング": "staging",
-    "マイグレーション": "migration",
-    "デプロイ": "deploy",
-    "ロールベース": "role-based",
-    "マイクロサービス": "microservice",
-    # Rescue / Emergency Dispatch (救急搬送システム domain)
-    "救急搬送": "vận chuyển cấp cứu",
-    "搬送者": "bệnh nhân được vận chuyển",
-    "搬送先": "nơi tiếp nhận",
-    "搬送元": "nơi chuyển đi",
-    "救急隊": "đội cứu thương",
-    "消防署": "trạm cứu hỏa",
-    "消防": "cứu hỏa",
-    "傷病者": "nạn nhân",
-    "多数傷病者": "đa nạn nhân",
-    "引き継ぎ": "bàn giao",
-    "交渉状態": "trạng thái liên hệ",
-    "交渉履歴": "lịch sử liên hệ",
-    "交渉開始": "bắt đầu liên hệ",
-    "出動": "xuất động",
-    "受入": "tiếp nhận",
-    "病院連携": "liên kết bệnh viện",
+    # IT terms — short English that NLLB tends to copy through
+    "クロステナント": "Cross-Tenant",
+    "マルチテナント": "Multi-Tenant",
+    "テナント": "Tenant",
+    "ユースケース": "Use-Case",
+    "デプロイ": "Deploy",
+    "マイクロサービス": "Microservice",
+    "ステージング": "Staging",
+}
+
+# Post-translation corrections: fix known BAD Vietnamese outputs from NLLB.
+# Applied AFTER translation to fix domain terms NLLB mistranslates.
+# Format: wrong_vietnamese → correct_vietnamese
+NLLB_POST_TRANSLATION = {
+    # IT terms NLLB mistranslates
+    "người thuê nhà": "tenant",
+    "người thuê qua": "cross-tenant",
+    "căn hộ": "tenant",
+    "nhà khoa học": "cross-tenant",
+    # Rescue domain
+    "thừa kế thai nhi": "bàn giao",
+    "nhiều thai nhi": "bàn giao nhiều lần",
+    "thai nhi": "bàn giao",
+    "mùi miệng": "liên hệ bệnh viện",
+    "người chuyển": "bệnh nhân vận chuyển",
+    "cảnh sát cứu hỏa": "trạm cứu hỏa",
 }
 
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.

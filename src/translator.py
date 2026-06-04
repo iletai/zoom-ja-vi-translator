@@ -219,7 +219,10 @@ class NllbTranslator:
             target_tokens = target_tokens[1:]
         target_ids = self.tokenizer.convert_tokens_to_ids(target_tokens)
         text = self.tokenizer.decode(target_ids)
-        return _validate_vietnamese_output(text)
+        text = _validate_vietnamese_output(text)
+        if text:
+            text = self._apply_post_translation(text)
+        return text
 
     def warmup(self) -> None:
         """Run one tiny translation to avoid first-call lag."""
@@ -229,12 +232,31 @@ class NllbTranslator:
     def _apply_glossary(text: str) -> str:
         """Substitute domain terms NLLB mistranslates with Latin renderings.
 
-        The replacement happens on the Japanese source; NLLB copies the Latin
-        text through to the Vietnamese output reliably.
+        The replacement happens on the Japanese source; NLLB copies short
+        English/proper-noun text through to the Vietnamese output reliably.
+        Sorted longest-first to prevent partial matches (e.g. クロステナント
+        before テナント).
         """
-        for term, replacement in config.NLLB_GLOSSARY.items():
+        for term, replacement in sorted(
+            config.NLLB_GLOSSARY.items(), key=lambda x: len(x[0]), reverse=True
+        ):
             if term in text:
                 text = text.replace(term, replacement)
+        return text
+
+    @staticmethod
+    def _apply_post_translation(text: str) -> str:
+        """Fix known bad Vietnamese outputs from NLLB.
+
+        Applied AFTER translation. Fixes domain terms that NLLB consistently
+        mistranslates (e.g. "tenant" → "người thuê nhà").
+        """
+        corrections = getattr(config, "NLLB_POST_TRANSLATION", None)
+        if not corrections:
+            return text
+        for wrong, right in corrections.items():
+            if wrong in text:
+                text = text.replace(wrong, right)
         return text
 
 

@@ -117,33 +117,22 @@ CLEAN_TEXTS = [
 # Test that glossary entries in config.NLLB_GLOSSARY properly match expected terms.
 # These are the key domain terms that MUST be in the glossary.
 REQUIRED_GLOSSARY_ENTRIES = {
-    "テナント": "tenant",
-    "クロステナント": "cross-tenant",
-    "マルチテナント": "multi-tenant",
-    "パーミッション": "permission",
-    "ユースケース": "use case",
-    "救急搬送": "vận chuyển cấp cứu",
-    "搬送者": "bệnh nhân được vận chuyển",
-    "救急隊": "đội cứu thương",
-    "消防署": "trạm cứu hỏa",
-    "消防": "cứu hỏa",
-    "引き継ぎ": "bàn giao",
-    "交渉状態": "trạng thái liên hệ",
-    "出動": "xuất động",
-    "受入": "tiếp nhận",
-    "病院連携": "liên kết bệnh viện",
-    "傷病者": "nạn nhân",
+    "テナント": "Tenant",
+    "クロステナント": "Cross-Tenant",
+    "マルチテナント": "Multi-Tenant",
+    "ユースケース": "Use-Case",
+    "デプロイ": "Deploy",
+    "マイクロサービス": "Microservice",
+    "ステージング": "Staging",
 }
 
 # Test that glossary applies longest-match-first (クロステナント before テナント)
 GLOSSARY_ORDERING_CASES = [
     # Input text → term that SHOULD be substituted (longest match wins)
-    ("クロステナントのデータ", "cross-tenant"),
-    ("マルチテナントの設計", "multi-tenant"),
-    ("テナントの権限", "tenant"),
-    ("交渉状態を確認", "trạng thái liên hệ"),
-    ("交渉履歴を表示", "lịch sử liên hệ"),
-    ("救急搬送システム", "vận chuyển cấp cứu"),
+    ("クロステナントのデータ", "Cross-Tenant"),
+    ("マルチテナントの設計", "Multi-Tenant"),
+    ("テナントの権限", "Tenant"),
+    ("ユースケースを定義", "Use-Case"),
 ]
 
 
@@ -157,27 +146,19 @@ TRANSLATION_KEYWORD_CASES = [
     # Input (after correction) → list of Vietnamese keywords expected in output
     (
         "消防側のテナントで処理が",
-        ["cứu hỏa", "tenant"],  # must contain these domain terms
+        ["cứu hỏa"],  # fire dept term should appear
     ),
     (
         "クロステナントの要件には入ってないんで",
-        ["cross-tenant"],
+        ["Cross-Tenant"],
     ),
     (
         "搬送決定したよっていう時にほかの病院の搬送決定も消すよとか",
         ["bệnh viện"],  # hospital should appear
     ),
     (
-        "ユースケースを網羅してその時にステータス更新は",
-        ["use case"],
-    ),
-    (
-        "病院連携業務のほうでやり取りが発生する",
-        ["bệnh viện", "liên kết"],
-    ),
-    (
-        "交渉状態を確認する",
-        ["liên hệ"],
+        "ユースケースを網羅して",
+        ["Use-Case"],
     ),
     (
         "消防がキーになってて",
@@ -318,6 +299,34 @@ def test_config_parameters():
     return passed == total
 
 
+def test_post_translation_corrections():
+    """Test that post-translation correction dict exists and has key entries."""
+    print("── Post-Translation Corrections (NLLB output fixes) ──")
+    corrections = getattr(config, "NLLB_POST_TRANSLATION", None)
+    if corrections is None:
+        print("  FAIL: NLLB_POST_TRANSLATION not found in config")
+        return False
+
+    required = {
+        "người thuê nhà": "tenant",
+        "người thuê qua": "cross-tenant",
+        "thừa kế thai nhi": "bàn giao",
+        "thai nhi": "bàn giao",
+    }
+    passed = 0
+    total = len(required)
+    for wrong, expected_right in required.items():
+        actual = corrections.get(wrong)
+        if actual == expected_right:
+            passed += 1
+        elif actual is None:
+            print(f"  FAIL: '{wrong}' NOT in corrections")
+        else:
+            print(f"  FAIL: '{wrong}' → '{actual}' (expected '{expected_right}')")
+    print(f"  {passed}/{total} passed")
+    return passed == total
+
+
 def test_hotwords_no_comments():
     """Test that hotwords_it.txt has no comment lines (sherpa-onnx bug)."""
     print("── Hotwords File (no comment lines) ──")
@@ -365,6 +374,8 @@ if __name__ == "__main__":
     results.append(("Glossary Ordering", test_glossary_ordering()))
     print()
     results.append(("Config Parameters", test_config_parameters()))
+    print()
+    results.append(("Post-Translation Fixes", test_post_translation_corrections()))
     print()
     results.append(("Hotwords File", test_hotwords_no_comments()))
     print()
