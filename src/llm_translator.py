@@ -19,6 +19,15 @@ from src.sentence_aggregator import split_japanese_sentences
 # with common kanji (関係, 関数, 森林). These are matched only via さん suffix.
 _LONG_SURNAMES = {s for s in SURNAME_SET if len(s) >= 2}
 
+# Pre-sorted (longest-first) for deterministic pre-processing in _translate_one.
+# Sorting once at module level avoids len(items) × O(n log n) per segment.
+_SORTED_SURNAMES: list[tuple[str, str]] = sorted(
+    SURNAME_MAP.items(), key=lambda x: len(x[0]), reverse=True,
+)
+_SORTED_KATAKANA_NAMES: list[tuple[str, str]] = sorted(
+    KATAKANA_NAMES.items(), key=lambda x: len(x[0]), reverse=True,
+)
+
 try:
     from src.translator import join_translations
 except Exception:  # pragma: no cover - fallback for partial environments
@@ -54,14 +63,13 @@ _DEFAULT_SYSTEM_PROMPT = (
     "受入＝tiếp nhận. "
     "Dịch ngắn gọn, tự nhiên.\n"
     "QUAN TRỌNG - Giữ tên người Nhật (romaji):\n"
-    "  - Tên + さん/様 KHÔNG ĐƯỢC bỏ hoặc đổi thành 'bạn'/'ông'/'cô'\n"
     "  - '中野さん' → 'anh Nakano' / 'Nakano-san'\n"
     "  - '川村さんのほう' → 'phía Kawamura'\n"
     "  - '羽根さん' → 'anh Hane'\n"
     "  - 'カリスさん' → 'anh Caris'\n"
     "  - 'ハレ井さん' → 'anh Harei'\n"
     "  - 'ジャンさん' → 'anh Jan'\n"
-    "  - 'ハレ井さん' → 'anh Harei'\n"
+    "  - Tên + さん/様 KHÔNG ĐƯỢC bỏ hoặc đổi thành 'bạn'/'ông'/'cô'\n"
     "  - Tên Nhật Kanji (深瀬, 大森, 河合) giữ romaji: Fukase, Omori, Kawai\n"
     "CẢNH BÁO - Không tự ý tách kanji ghép:\n"
     "  - 関係 = quan hệ (KHÔNG tách thành 関 Seki)\n"
@@ -116,7 +124,7 @@ class LlmTranslator:
 
     # Wrong Ư-starter words (almost never valid at sentence start in IT context)
     _WRONG_U_STARTERS = ("Ướt ", "Ưỡn ", "Ướm ")
-    _MAX_PROMPT_CONTEXT_SENTENCES = 1
+    _MAX_PROMPT_CONTEXT_SENTENCES = 5
 
     def __init__(self) -> None:
         model_path = pathlib.Path(str(getattr(config, "LLM_MODEL_PATH", ""))).expanduser()
@@ -211,8 +219,14 @@ class LlmTranslator:
         # Optionally build GBNF grammar for hard Latin-only output constraint.
         self._vi_grammar = self._build_vi_grammar()
 
-        # Merge common Japanese surnames into proper noun map (romaji copy-through)
-        self._PROPER_NOUN_MAP.update(SURNAME_MAP)
+        # Pre-sorted (longest-first) lookup tables for deterministic replacement.
+        # Sorting once at init avoids O(n log n) per segment.
+        self._sorted_jp_dow: list[tuple[str, str]] = sorted(
+            self._JP_DOW_MAP.items(), key=lambda x: -len(x[0]),
+        )
+        self._sorted_katakana_terms: list[tuple[str, str]] = sorted(
+            self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0]),
+        )
 
         # NLLB fast-path translator for simple sentences
         self._fast_translator = self._init_fast_translator()
@@ -331,11 +345,13 @@ digit ::= [0-9]
         # Keigo/formal patterns → need LLM for nuance (check first, any length)
         if any(marker in text for marker in self._COMPLEX_GRAMMAR_MARKERS):
             return "llm"
-        # Person name detected → LLM (NLLB hallucinates literal kanji meanings)
+        # Person name suffix → LLM (pre-processing keeps Romaji-san format)
         if "さん" in text or "様" in text:
             return "llm"
-        # Multi-char surnames substring match (single-char: 森/林/関 excluded
-        # to avoid false positives with common kanji compounds like 関係/関数)
+        # Multi-char surnames: still in kanji (not in SURNAME_MAP → not pre-processed),
+        # so NLLB would hallucinate literal meanings. Route to LLM.
+        # Single-char surnames (森/林/関) excluded to avoid false positives
+        # with common kanji compounds like 関係/関数.
         if any(name in text for name in _LONG_SURNAMES):
             return "llm"
         # Very short fragments (fillers, simple nouns) → NLLB is fine
@@ -694,10 +710,7 @@ digit ::= [0-9]
             return ""
 
         # Pre-process: replace 姓+さん with romaji-san to prevent name hallucination
-        # Sort by kanji length (longest first) to handle overlapping surnames
-        for kanji, romaji in sorted(SURNAME_MAP.items(), key=lambda x: len(x[0]), reverse=True):
-            # Only process multi-char surnames for substring replacement
-            # (single-char: 森/林/関 excluded to avoid false positives in 関係/関数)
+        for kanji, romaji in _SORTED_SURNAMES:
             if len(kanji) < 2:
                 continue
             suffix_with = f"{kanji}さん"
@@ -706,13 +719,24 @@ digit ::= [0-9]
             suffix_sama = f"{kanji}様"
             if suffix_sama in cleaned:
                 cleaned = cleaned.replace(suffix_sama, f"{romaji}-sama")
-            # Replace bare kanji surname with romaji (safe for multi-char names)
             if kanji in cleaned:
                 cleaned = cleaned.replace(kanji, romaji)
-        # Also pre-process katakana names (guest names from meeting evidence)
-        for kana, romaji in sorted(KATAKANA_NAMES.items(), key=lambda x: len(x[0]), reverse=True):
-            if kana in cleaned:
-                cleaned = cleaned.replace(kana, romaji)
+        for kana, romaji in _SORTED_KATAKANA_NAMES:
+            kana_san = f"{kana}さん"
+            if kana_san in cleaned:
+                cleaned = cleaned.replace(kana_san, f"{romaji}-san")
+                continue
+            kana_sama = f"{kana}様"
+            if kana_sama in cleaned:
+                cleaned = cleaned.replace(kana_sama, f"{romaji}-sama")
+                continue
+            idx = cleaned.find(kana)
+            if idx >= 0:
+                after = idx + len(kana)
+                before_ok = idx == 0 or cleaned[idx - 1] in " 　。、"
+                after_ok = after >= len(cleaned) or cleaned[after] in " 　。、はがをにの"
+                if before_ok and after_ok:
+                    cleaned = cleaned.replace(kana, romaji)
 
         # Check filler words first (no LLM needed)
         filler_result = self._FILLER_MAP.get(cleaned)
@@ -740,15 +764,17 @@ digit ::= [0-9]
             processed = processed.replace(keigo, plain)
 
         # Pre-process: replace day-of-week kanji with correct Vietnamese (deterministic)
-        for jp_day, vi_day in sorted(
-            self._JP_DOW_MAP.items(), key=lambda x: -len(x[0])
-        ):
+        dow_map = getattr(self, "_sorted_jp_dow", None)
+        if dow_map is None:
+            dow_map = sorted(self._JP_DOW_MAP.items(), key=lambda x: -len(x[0]))
+        for jp_day, vi_day in dow_map:
             processed = processed.replace(jp_day, vi_day)
 
         # Pre-process: replace known katakana IT terms with equivalents. Longest first.
-        for ja_term, en_term in sorted(
-            self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0])
-        ):
+        kt_map = getattr(self, "_sorted_katakana_terms", None)
+        if kt_map is None:
+            kt_map = sorted(self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0]))
+        for ja_term, en_term in kt_map:
             processed = processed.replace(ja_term, en_term)
 
         # Pre-process common misrecognized patterns

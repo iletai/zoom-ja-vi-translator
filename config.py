@@ -445,7 +445,6 @@ LLM_SYSTEM_PROMPT = os.environ.get(
     "  - 'カリスさん' → 'anh Caris'\n"
     "  - 'ハレ井さん' → 'anh Harei'\n"
     "  - 'ジャンさん' → 'anh Jan'\n"
-    "  - 'ハレ井さん' → 'anh Harei'\n"
     "  - Tên + さん/様 KHÔNG ĐƯỢC bỏ hoặc đổi thành 'bạn'/'ông'/'cô'\n"
     "  - Tên Nhật (Kanji như 深瀬, 大森, 河合) giữ romaji: Fukase, Omori, Kawai\n"
     "CẢNH BÁO - Không tự ý tách kanji:\n"
