@@ -119,6 +119,16 @@ SURNAME_MAP: dict[str, str] = {
     "羽根": "Hane",
     "深瀬": "Fukase",
     "大森": "Omori",
+    "河合": "Kawai",
+    # Mixed-script names (katakana + kanji)
+    "ハレ井": "Harei",
+}
+
+# Katakana-only guest names from meeting evidence
+# These are not in SURNAME_SET (no kanji) but need pre-processing
+KATAKANA_NAMES: dict[str, str] = {
+    "カリス": "Caris",
+    "ジャン": "Jan",
 }
 
 SURNAME_SET: frozenset[str] = frozenset(SURNAME_MAP.keys())

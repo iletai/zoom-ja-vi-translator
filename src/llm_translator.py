@@ -11,7 +11,7 @@ from collections import deque
 from typing import Any
 
 import config
-from src.japanese_names import SURNAME_MAP, SURNAME_SET
+from src.japanese_names import SURNAME_MAP, SURNAME_SET, KATAKANA_NAMES
 from src.sentence_aggregator import split_japanese_sentences
 
 # Multi-character surnames: safe for substring matching.
@@ -52,7 +52,26 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Dịch thuật ngữ cứu hộ: 消防＝cứu hỏa, 救急＝cấp cứu, 搬送＝vận chuyển, "
     "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝xuất kích/điều động, "
     "受入＝tiếp nhận. "
-    "Tên riêng giữ romaji."
+    "Dịch ngắn gọn, tự nhiên.\n"
+    "QUAN TRỌNG - Giữ tên người Nhật (romaji):\n"
+    "  - Tên + さん/様 KHÔNG ĐƯỢC bỏ hoặc đổi thành 'bạn'/'ông'/'cô'\n"
+    "  - '中野さん' → 'anh Nakano' / 'Nakano-san'\n"
+    "  - '川村さんのほう' → 'phía Kawamura'\n"
+    "  - '羽根さん' → 'anh Hane'\n"
+    "  - 'カリスさん' → 'anh Caris'\n"
+    "  - 'ハレ井さん' → 'anh Harei'\n"
+    "  - 'ジャンさん' → 'anh Jan'\n"
+    "  - 'ハレ井さん' → 'anh Harei'\n"
+    "  - Tên Nhật Kanji (深瀬, 大森, 河合) giữ romaji: Fukase, Omori, Kawai\n"
+    "CẢNH BÁO - Không tự ý tách kanji ghép:\n"
+    "  - 関係 = quan hệ (KHÔNG tách thành 関 Seki)\n"
+    "  - 関数 = hàm số (KHÔNG tách thành 関 Seki)\n"
+    "  - 関連 = liên quan (KHÔNG tách thành 関 Seki)\n"
+    "  - Đây là từ ghép thông thường, KHÔNG phải tên riêng\n"
+    "CẢNH BÁO - Dịch sát, không bịa:\n"
+    "  - Nếu câu nhập vô nghĩa (ASR lỗi), dịch sát nghĩa đen\n"
+    "  - KHÔNG ĐƯỢC thêm ngữ cảnh không có trong câu gốc\n"
+    "  - Ưu tiên dịch sát > dịch hay"
 )
 
 
@@ -575,6 +594,22 @@ digit ::= [0-9]
         "受入": "tiếp nhận",
         "消防": "cứu hỏa",
         "救助": "cứu hộ",
+        "案件": "hạng mục",
+        "着手": "bắt đầu triển khai",
+        "進捗": "tiến độ",
+        "受け入れ": "tiếp nhận",
+        "負荷試験": "kiểm tra tải",
+        "レビュー": "review",
+        "設計": "thiết kế",
+        "Ｃross-Tenant": "Cross-Tenant",
+        "クロステナント": "Cross-Tenant",
+        "マルチテナント": "multi-tenant",
+        "ステータス": "trạng thái",
+        "ダッシュボード": "dashboard",
+        "リリース": "release",
+        "トリアージ": "triage",
+        "バイタル": "vital signs",
+        "インシデント": "incident",
     }
 
     # Proper nouns (place names, companies) that the model fails to transliterate.
@@ -619,6 +654,7 @@ digit ::= [0-9]
         # Disaster/incident management systems
         "EMIS": "EMIS",
         "広域災害": "Thảm họa diện rộng",
+        "広域地図": "bản đồ diện rộng",
     }
 
     # CJK single-digit numerals → Arabic digit (applied before kanji stripping).
@@ -656,6 +692,27 @@ digit ::= [0-9]
         cleaned = text.strip() if text else ""
         if not cleaned:
             return ""
+
+        # Pre-process: replace 姓+さん with romaji-san to prevent name hallucination
+        # Sort by kanji length (longest first) to handle overlapping surnames
+        for kanji, romaji in sorted(SURNAME_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+            # Only process multi-char surnames for substring replacement
+            # (single-char: 森/林/関 excluded to avoid false positives in 関係/関数)
+            if len(kanji) < 2:
+                continue
+            suffix_with = f"{kanji}さん"
+            if suffix_with in cleaned:
+                cleaned = cleaned.replace(suffix_with, f"{romaji}-san")
+            suffix_sama = f"{kanji}様"
+            if suffix_sama in cleaned:
+                cleaned = cleaned.replace(suffix_sama, f"{romaji}-sama")
+            # Replace bare kanji surname with romaji (safe for multi-char names)
+            if kanji in cleaned:
+                cleaned = cleaned.replace(kanji, romaji)
+        # Also pre-process katakana names (guest names from meeting evidence)
+        for kana, romaji in sorted(KATAKANA_NAMES.items(), key=lambda x: len(x[0]), reverse=True):
+            if kana in cleaned:
+                cleaned = cleaned.replace(kana, romaji)
 
         # Check filler words first (no LLM needed)
         filler_result = self._FILLER_MAP.get(cleaned)

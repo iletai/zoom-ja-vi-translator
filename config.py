@@ -403,7 +403,7 @@ else:
     _LLM_DEFAULT_MODEL = _LLM_1P5B_FILE
     LLM_MODEL_DIR = _LLM_1P5B_DIR
 LLM_MODEL_PATH = Path(os.environ.get("ZT_LLM_MODEL", str(_LLM_DEFAULT_MODEL)))
-LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "512"))
+LLM_N_CTX = int(os.environ.get("ZT_LLM_CTX", "1024"))
 # LLM RAM cache capacity in MB. The LlamaRAMCache stores KV state for prompt
 # prefix reuse. Lower values reduce peak RSS on memory-constrained systems.
 LLM_RAM_CACHE_MB = int(os.environ.get("ZT_LLM_CACHE_MB", "256"))
@@ -437,7 +437,26 @@ LLM_SYSTEM_PROMPT = os.environ.get(
     "Dịch thuật ngữ cứu hộ: 消防＝cứu hỏa, 救急＝cấp cứu, 搬送＝vận chuyển, "
     "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝xuất kích/điều động, "
     "受入＝tiếp nhận. "
-    "Dịch ngắn gọn, tự nhiên. Tên riêng giữ romaji.",
+    "Dịch ngắn gọn, tự nhiên.\n"
+    "QUAN TRỌNG - Giữ tên người Nhật (romaji):\n"
+    "  - '中野さん' → 'Anh Nakano' / 'Nakano-san'\n"
+    "  - '川村さんのほう' → 'phía Kawamura'\n"
+    "  - '羽根さん' → 'anh Hane'\n"
+    "  - 'カリスさん' → 'anh Caris'\n"
+    "  - 'ハレ井さん' → 'anh Harei'\n"
+    "  - 'ジャンさん' → 'anh Jan'\n"
+    "  - 'ハレ井さん' → 'anh Harei'\n"
+    "  - Tên + さん/様 KHÔNG ĐƯỢC bỏ hoặc đổi thành 'bạn'/'ông'/'cô'\n"
+    "  - Tên Nhật (Kanji như 深瀬, 大森, 河合) giữ romaji: Fukase, Omori, Kawai\n"
+    "CẢNH BÁO - Không tự ý tách kanji:\n"
+    "  - 関係 = quan hệ (KHÔNG tách thành 関 Seki + 係 phòng ban)\n"
+    "  - 関数 = hàm số (KHÔNG tách thành 関 Seki + 数 số)\n"
+    "  - 関連 = liên quan (KHÔNG tách thành 関 Seki + 連)\n"
+    "  - Đây là từ ghép tiếng Nhật thông thường, KHÔNG phải tên riêng\n"
+    "CẢNH BÁO - Không bịa nghĩa từ ASR lỗi:\n"
+    "  - Nếu câu nhập vô nghĩa (ASR lỗi), dịch sát nghĩa đen\n"
+    "  - KHÔNG ĐƯỢC bịa thêm ngữ cảnh không có trong câu gốc\n"
+    "  - Ưu tiên dịch sát > dịch hay",
 )
 
 # ─── Cloud backend (optional, --cloud) ──────────────────────────────────

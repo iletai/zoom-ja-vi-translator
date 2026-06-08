@@ -51,6 +51,10 @@ PHRASE_CORRECTIONS: dict[str, str] = {
     "相場": "案件",
     "イクライド": "Eclipse",
     "卒業中": "調整中",
+    # ASR confusions from 2026-06-08 rescue dispatch meeting
+    "感染していて": "案件でいって",
+    "大森アート": "大森の方",
+    "化け物": "確認もの",
 }
 
 # Context-aware corrections: only apply when surrounding text matches a pattern
@@ -61,6 +65,8 @@ CONTEXT_CORRECTIONS: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"祖母(?=の|署|隊|車|局|側|が)"), "祖母", "消防"),
     # 昭和 → 消防 when NOT followed by era markers
     (re.compile(r"昭和(?!年|時代|[0-9０-９])"), "昭和", "消防"),
+    # 浮世 (ukiyo) → 設計 (sekkei) when 設計 appears in preceding text
+    (re.compile(r"(?<=設計の件ですけど)恐らく浮世"), "恐らく浮世", "恐らく設計"),
 ]
 
 
