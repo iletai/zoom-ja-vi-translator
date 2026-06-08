@@ -11,7 +11,13 @@ from collections import deque
 from typing import Any
 
 import config
+from src.japanese_names import SURNAME_MAP, SURNAME_SET
 from src.sentence_aggregator import split_japanese_sentences
+
+# Multi-character surnames: safe for substring matching.
+# Single-character surnames (森, 林, 関) excluded to avoid false positives
+# with common kanji (関係, 関数, 森林). These are matched only via さん suffix.
+_LONG_SURNAMES = {s for s in SURNAME_SET if len(s) >= 2}
 
 try:
     from src.translator import join_translations
@@ -33,14 +39,19 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
     # English first — Qwen2.5's strongest instruction-following pathway
-    "You are a Japanese-to-Vietnamese translator for IT meetings. "
+    "You are a Japanese-to-Vietnamese translator for IT meetings "
+    "about emergency medical dispatch systems (救急搬送システム) for Japan's fire/EMS service. "
     "CRITICAL: Output ONLY Vietnamese using Latin script. "
     "NEVER use Chinese characters (漢字/汉字). NEVER use Japanese kana. "
     "Output exactly ONE line of Vietnamese translation.\n"
     # Vietnamese reinforcement
-    "Bạn là máy dịch Nhật→Việt. CHỈ xuất tiếng Việt (chữ Latin). "
+    "Bạn là máy dịch Nhật→Việt cho cuộc họp CNTT về hệ thống điều phối cứu hộ Nhật Bản. "
+    "CHỈ xuất tiếng Việt (chữ Latin). "
     "KHÔNG ĐƯỢC dùng chữ Hán/tiếng Trung/tiếng Nhật. "
     "Giữ nguyên thuật ngữ IT: Cloud, AWS, API, deploy, sprint, Lambda, EC2, S3. "
+    "Dịch thuật ngữ cứu hộ: 消防＝cứu hỏa, 救急＝cấp cứu, 搬送＝vận chuyển, "
+    "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝xuất kích/điều động, "
+    "受入＝tiếp nhận. "
     "Tên riêng giữ romaji."
 )
 
@@ -181,6 +192,9 @@ class LlmTranslator:
         # Optionally build GBNF grammar for hard Latin-only output constraint.
         self._vi_grammar = self._build_vi_grammar()
 
+        # Merge common Japanese surnames into proper noun map (romaji copy-through)
+        self._PROPER_NOUN_MAP.update(SURNAME_MAP)
+
         # NLLB fast-path translator for simple sentences
         self._fast_translator = self._init_fast_translator()
 
@@ -292,16 +306,23 @@ digit ::= [0-9]
 
         Returns: 'nllb' for fast NMT path, 'llm' for full LLM translation.
         """
-        if not self._fast_translator:
+        if not getattr(self, "_fast_translator", None):
             return "llm"
         n = len(text)
         # Keigo/formal patterns → need LLM for nuance (check first, any length)
         if any(marker in text for marker in self._COMPLEX_GRAMMAR_MARKERS):
             return "llm"
-        # Short or medium sentence without complex grammar → NLLB
-        if n <= 60:
+        # Person name detected → LLM (NLLB hallucinates literal kanji meanings)
+        if "さん" in text or "様" in text:
+            return "llm"
+        # Multi-char surnames substring match (single-char: 森/林/関 excluded
+        # to avoid false positives with common kanji compounds like 関係/関数)
+        if any(name in text for name in _LONG_SURNAMES):
+            return "llm"
+        # Very short fragments (fillers, simple nouns) → NLLB is fine
+        if n <= 30:
             return "nllb"
-        # Long sentences → LLM for better context handling
+        # Longer text or anything ambiguous → LLM for context-aware quality
         return "llm"
 
     def translate(self, text: str) -> str:
@@ -496,6 +517,25 @@ digit ::= [0-9]
         "マージ": "merge",
         "ラムダ": "Lambda",
         "タスク": "task",
+        # Emergency medical / rescue domain katakana terms
+        "バイタル": "vital signs",
+        "トリアージ": "triage",
+        "ストレッチャー": "stretcher",
+        "インシデント": "incident",
+        "コマンド": "command",
+        "コントロール": "control",
+        "オペレーション": "operation",
+        "ディスパッチ": "dispatch",
+        "プロトコル": "protocol",
+        "トリアージタグ": "triage tag",
+        "ホットゾーン": "hot zone",
+        "レスキュー": "rescue",
+        "パラメディック": "paramedic",
+        "メディカル": "medical",
+        "エマージェンシー": "emergency",
+        "マニュアル": "manual",
+        "シミュレーション": "simulation",
+        "トレーニング": "training",
     }
 
     _BUSINESS_GLOSSARY = {
@@ -520,6 +560,21 @@ digit ::= [0-9]
         "推進": "thúc đẩy",
         "連携": "liên kết",
         "基幹": "cơ bản/nền tảng",
+        # Emergency medical / rescue domain
+        "搬送": "vận chuyển",
+        "搬送元": "nơi xuất phát vận chuyển",
+        "搬送決定": "quyết định vận chuyển",
+        "傷病者": "nạn nhân",
+        "引き継ぎ": "bàn giao",
+        "出動": "xuất kích/điều động",
+        "指令": "chỉ thị/điều phối",
+        "救急搬送": "vận chuyển cấp cứu",
+        "現場": "hiện trường",
+        "災害": "thảm họa",
+        "患者": "bệnh nhân",
+        "受入": "tiếp nhận",
+        "消防": "cứu hỏa",
+        "救助": "cứu hộ",
     }
 
     # Proper nouns (place names, companies) that the model fails to transliterate.
@@ -545,6 +600,25 @@ digit ::= [0-9]
         "経済産業省": "Bộ Kinh tế Nhật",
         "デジタル庁": "Cơ quan Kỹ thuật số",
         "総務省": "Bộ Nội vụ Nhật",
+        # Emergency/rescue organizations (Japan)
+        "東京消防庁": "Sở Cứu hỏa Tokyo",
+        "消防庁": "Cục Cứu hỏa",
+        "消防本部": "Sở chỉ huy Cứu hỏa",
+        "消防団": "Đội Cứu hỏa",
+        "消防署": "Trạm Cứu hỏa",
+        "消防": "Cứu hỏa",
+        "救急": "Cấp cứu",
+        "救急隊": "Đội Cấp cứu",
+        "救急車": "Xe Cấp cứu",
+        "警察": "Cảnh sát",
+        "自衛隊": "Lực lượng Phòng vệ",
+        "日本赤十字社": "Hội Chữ thập đỏ Nhật Bản",
+        "DMAT": "DMAT",
+        "医療機関": "Cơ sở y tế",
+        "病院": "Bệnh viện",
+        # Disaster/incident management systems
+        "EMIS": "EMIS",
+        "広域災害": "Thảm họa diện rộng",
     }
 
     # CJK single-digit numerals → Arabic digit (applied before kanji stripping).
@@ -619,6 +693,10 @@ digit ::= [0-9]
             self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0])
         ):
             processed = processed.replace(ja_term, en_term)
+
+        # Pre-process common misrecognized patterns
+        processed = processed.replace("百パー", "100%")
+        processed = processed.replace("百%", "100%")
 
         # NLLB fast-path: route simple sentences to NMT for lower latency
         tier = self._classify_complexity(cleaned)

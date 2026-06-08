@@ -110,8 +110,8 @@ def test_translate_one_replaces_proper_nouns_after_katakana_preprocessing() -> N
 def test_translate_one_uses_added_katakana_term_overrides() -> None:
     translator, _ = _make_translator()
 
-    assert translator._translate_one("トークイベント", update_context=False) == "talk event"
-    assert translator._translate_one("トークイーブメント", update_context=False) == "talk event"
+    assert translator._translate_one("トークイベント", update_context=False) == "sự kiện thảo luận"
+    assert translator._translate_one("トークイーブメント", update_context=False) == "sự kiện thảo luận"
 
 
 def test_build_raw_prompt_uses_true_prefill() -> None:

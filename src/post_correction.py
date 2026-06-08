@@ -42,6 +42,15 @@ PHRASE_CORRECTIONS: dict[str, str] = {
     "デブツー": "dev2",
     # ユースケース dropped prefix — only when NOT already preceded by ユー
     "ペナント": "テナント",
+    # ASR misrecognitions from meeting evidence (phonetically similar)
+    "海水エコ": "解消",
+    "別居": "別件",
+    "着水": "着手",
+    "逆襲": "着手",
+    "非性能": "非機能",
+    "相場": "案件",
+    "イクライド": "Eclipse",
+    "卒業中": "調整中",
 }
 
 # Context-aware corrections: only apply when surrounding text matches a pattern

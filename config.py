@@ -324,6 +324,38 @@ NLLB_GLOSSARY = {
     "デプロイ": "Deploy",
     "マイクロサービス": "Microservice",
     "ステージング": "Staging",
+    # Emergency medical / rescue domain terms (NLLB reads kanji literally → hallucinates)
+    # Evidence: 引き継ぎ → "thai nhi" (fetus), 病院連携 → "mùi miệng" (bad breath)
+    "引き継ぎ": "handover",
+    "病院連携": "hospital coordination",
+    "傷病者": "injured person",
+    "搬送": "transport",
+    "搬送者": "transporter",
+    "搬送元": "transport origin",
+    "搬送決定": "transport decision",
+    "出動": "dispatch",
+    "受入": "acceptance",
+    "救急搬送": "emergency transport",
+    "救急隊": "EMS squad",
+    "救急車": "ambulance",
+    "消防": "fire department",
+    "消防署": "fire station",
+    "広域地図": "wide-area map",
+    "多数傷病者": "mass casualties",
+    "消火": "firefighting",
+    "消火活動": "firefighting operation",
+    "救助": "rescue",
+    "救助活動": "rescue operation",
+    "通信指令": "communication dispatch",
+    "通信指令台": "dispatch console",
+    "現場": "scene",
+    "現場到着": "scene arrival",
+    "患者": "patient",
+    "バイタル": "vital signs",
+    "トリアージ": "triage",
+    "医療機関": "medical facility",
+    "災害": "disaster",
+    "災害時": "during disaster",
 }
 
 # Post-translation corrections: fix known BAD Vietnamese outputs from NLLB.
@@ -342,6 +374,12 @@ NLLB_POST_TRANSLATION = {
     "mùi miệng": "liên hệ bệnh viện",
     "người chuyển": "bệnh nhân vận chuyển",
     "cảnh sát cứu hỏa": "trạm cứu hỏa",
+    # Name hallucination fixes (NLLB reads kanji names literally)
+    "nghệ thuật của rừng": "phía Omori",
+    "rừng nghệ thuật": "Omori",
+    "cảnh sát cứu hỏa láng giềng": "trạm cứu hỏa lân cận",
+    # Bad SVO / grammar fixes
+    "và tôi thấy nó rất phấn khích": "tôi rất ngạc nhiên",
 }
 
 # Pre-converted CTranslate2 NLLB model to download if local convert is skipped.
@@ -387,13 +425,18 @@ LLM_SYSTEM_PROMPT = os.environ.get(
     "ZT_LLM_PROMPT",
     # Bilingual prompt: English first (strongest instruction pathway for Qwen),
     # then Vietnamese reinforcement.
-    "You are a Japanese-to-Vietnamese translator for IT meetings. "
+    "You are a Japanese-to-Vietnamese translator for IT meetings "
+    "about emergency medical dispatch systems (救急搬送システム) for Japan's fire/EMS service. "
     "CRITICAL: Output ONLY Vietnamese using Latin script. "
     "NEVER use Chinese characters. NEVER use Japanese kana. "
     "Output exactly ONE line of Vietnamese translation.\n"
-    "Bạn là máy dịch Nhật→Việt. CHỈ xuất tiếng Việt (chữ Latin). "
+    "Bạn là máy dịch Nhật→Việt cho cuộc họp CNTT về hệ thống điều phối cứu hộ Nhật Bản. "
+    "CHỈ xuất tiếng Việt (chữ Latin). "
     "KHÔNG ĐƯỢC dùng chữ Hán/tiếng Trung. "
     "Giữ nguyên thuật ngữ IT: Cloud, AWS, API, deploy, sprint, Lambda, EC2, S3. "
+    "Dịch thuật ngữ cứu hộ: 消防＝cứu hỏa, 救急＝cấp cứu, 搬送＝vận chuyển, "
+    "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝xuất kích/điều động, "
+    "受入＝tiếp nhận. "
     "Dịch ngắn gọn, tự nhiên. Tên riêng giữ romaji.",
 )
 
