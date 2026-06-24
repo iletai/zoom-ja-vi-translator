@@ -9,6 +9,44 @@ import os
 from pathlib import Path
 
 
+def _load_dotenv(path: Path) -> None:
+    """Load ``KEY=VALUE`` lines from a .env file into ``os.environ``.
+
+    Zero-dependency (no python-dotenv). Real environment variables always win —
+    a value already set in the environment is NOT overwritten, so the .env file
+    is a default, overridable per-run by ``ZT_FOO=... python main.py``. Supports
+    ``#`` comments, blank lines, ``export KEY=val``, and quoted values; malformed
+    lines are skipped silently so a typo never crashes startup.
+
+    Secrets (the 9router URL/key/model) live here instead of hardcoded in this
+    file, so the repo ships no credentials and each machine configures its own.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        value = value.strip()
+        if (len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'"):
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+# Load .env from the project root BEFORE any os.environ.get() below, so file
+# values are visible to every config read. A real env var still overrides it.
+_load_dotenv(Path(__file__).resolve().parent / ".env")
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     """True when env var ``name`` is set to an affirmative value.
 
@@ -61,6 +99,26 @@ SAMPLE_RATE = 16_000          # Hz — required by both ReazonSpeech and VAD
 CHANNELS = 1                  # mono
 CAPTURE_BLOCK_SECONDS = 0.2   # size of each captured block before queueing
 CAPTURE_QUEUE_MAXSIZE = 64    # drop-oldest beyond this to bound latency
+
+# ─── Audio input enrichment (pre-ASR conditioning) ───────────────────────
+# Light, dependency-free DSP applied to each captured block before VAD/ASR to
+# raise recognition accuracy on real meeting audio (quiet speakers, HVAC rumble,
+# inconsistent levels from different participants). All knobs are env-overridable
+# and the whole stage is a no-op when ZT_AUDIO_ENRICH is off.
+AUDIO_ENRICH = _env_flag("ZT_AUDIO_ENRICH", True)
+# High-pass cutoff (Hz): removes DC offset + low-frequency rumble (fans, mic
+# bumps, room hum) below the speech band. 0 disables. ~80 Hz is safe for speech.
+AUDIO_HIGHPASS_HZ = float(os.environ.get("ZT_AUDIO_HIGHPASS_HZ", "80"))
+# Target RMS for soft AGC: quiet blocks are gained up toward this level so the
+# ASR sees a consistent loudness. 0 disables gain. ~0.05 is a comfortable
+# speech level for float32 audio in [-1, 1].
+AUDIO_TARGET_RMS = float(os.environ.get("ZT_AUDIO_TARGET_RMS", "0.05"))
+# Cap the AGC gain so near-silent background blocks are not amplified into noise.
+AUDIO_MAX_GAIN = float(os.environ.get("ZT_AUDIO_MAX_GAIN", "8.0"))
+# Below this RMS a block is treated as silence and left unGained (avoids pumping
+# noise up during pauses).
+AUDIO_NOISE_FLOOR_RMS = float(os.environ.get("ZT_AUDIO_NOISE_FLOOR_RMS", "0.005"))
+
 # Recognized-text queue between ASR and translation. Unlike raw audio (which
 # cannot block capture indefinitely), text here is already-recognized speech —
 # dropping it permanently loses meeting content, the user's exact complaint. So
@@ -435,7 +493,8 @@ LLM_SYSTEM_PROMPT = os.environ.get(
     "KHÔNG ĐƯỢC dùng chữ Hán/tiếng Trung. "
     "Giữ nguyên thuật ngữ IT: Cloud, AWS, API, deploy, sprint, Lambda, EC2, S3. "
     "Dịch thuật ngữ cứu hộ: 消防＝cứu hỏa, 救急＝cấp cứu, 搬送＝vận chuyển, "
-    "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝xuất kích/điều động, "
+    "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝điều động, "
+    "割り込み＝task gián đoạn, 親タスク＝parent task, 子タスク＝child task, "
     "受入＝tiếp nhận. "
     "Dịch ngắn gọn, tự nhiên.\n"
     "QUAN TRỌNG - Giữ tên người Nhật (romaji):\n"
@@ -457,6 +516,73 @@ LLM_SYSTEM_PROMPT = os.environ.get(
     "  - KHÔNG ĐƯỢC bịa thêm ngữ cảnh không có trong câu gốc\n"
     "  - Ưu tiên dịch sát > dịch hay",
 )
+
+# ─── Router backend (9router / OpenAI-compatible gateway, opt-in) ─────────
+# Route translation through a local OpenAI-compatible gateway (9router) that
+# fronts hosted models (Claude / GPT / DeepSeek / …). Activate with
+# ZT_TRANSLATOR=router. Network calls leave the machine via the gateway, so this
+# is NOT an offline backend — use nllb/llm for fully local operation.
+#
+# The gateway speaks POST {ROUTER_BASE_URL}/chat/completions with the standard
+# OpenAI body; the Vietnamese text is read from choices[0].message.content.
+# The gateway speaks POST {ROUTER_BASE_URL}/chat/completions with the standard
+# OpenAI body; the Vietnamese text is read from choices[0].message.content.
+#
+# Credentials come from the environment / .env (see .env.example) — never
+# hardcode a key here. ROUTER_API_KEY defaults to empty so a missing .env fails
+# loudly at the gateway rather than shipping a real token in the repo.
+ROUTER_BASE_URL = os.environ.get("ZT_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1")
+ROUTER_API_KEY = os.environ.get("ZT_ROUTER_KEY", "")
+ROUTER_MODEL = os.environ.get("ZT_ROUTER_MODEL", "gh/claude-haiku-4.5")
+ROUTER_TEMPERATURE = float(os.environ.get("ZT_ROUTER_TEMPERATURE", "0.1"))
+# 180 target tokens comfortably covers a JA→VI sentence (ratio ~1:1.2) without
+# the latency of the old 256 ceiling. Raise only if long sentences get clipped.
+ROUTER_MAX_TOKENS = int(os.environ.get("ZT_ROUTER_MAX_TOKENS", "180"))
+# Hard per-request deadline. Live captions must fail fast: a stalled segment is
+# better dropped (and the next one shown) than blocking the meeting for 20s.
+ROUTER_TIMEOUT_S = float(os.environ.get("ZT_ROUTER_TIMEOUT", "6"))
+# Sentences of prior context fed to the model for coherent terminology across a
+# meeting (0 disables). Reuses the LLM backend's JA→VI system prompt.
+ROUTER_CONTEXT_SENTENCES = int(os.environ.get("ZT_ROUTER_CONTEXT", "3"))
+# A dedicated, terse prompt for STRONG hosted models (Claude/GPT). The local
+# Qwen prompt (LLM_SYSTEM_PROMPT) must NOT be reused here: its instruction to
+# "translate literally if the input is nonsense / ASR-broken" makes a capable
+# model switch into assistant mode — it wraps the translation in quotes, adds
+# commentary, and asks the speaker clarifying questions instead of translating
+# (observed in real sessions: ~40% of segments). This prompt forbids exactly
+# that: translate only, output nothing else, never converse.
+_ROUTER_DEFAULT_PROMPT = (
+    "You are a machine translation engine, Japanese to Vietnamese, for a live "
+    "IT meeting about a Japanese emergency-medical-dispatch system.\n"
+    "Rules:\n"
+    "- Output ONLY the Vietnamese translation. No quotes, no notes, no labels, "
+    "no explanation, no questions back to the speaker.\n"
+    "- Translate every input as-is, even if it is a fragment, filler, or looks "
+    "garbled. Never comment that the input is unclear or an ASR error — just "
+    "translate the words literally. If the input trails off, let the Vietnamese "
+    "trail off too (end with '...'); do not invent an ending.\n"
+    "- This is spoken meeting dialogue, not written text. Use natural spoken "
+    "Vietnamese, keep the speaker's politeness: render Japanese keigo (です/ます, "
+    "いただく, お願いします, いたします) with Vietnamese politeness markers (ạ, dạ, "
+    "vâng, xin, được không ạ) — never reduce a polite request to a bare command.\n"
+    "- First person 自分/私 = 'tôi' (I), never 'bạn' (you).\n"
+    "- Back-channels: はい→Vâng, うん→Ừ, ええ→Vâng, ああ→À, なるほど→Hiểu rồi, "
+    "えっと/あの/うんと→Ừm. Do NOT turn them into 'Được'/commands/instructions.\n"
+    "- Keep Japanese personal names in romaji with their honorific "
+    "(中野さん → Nakano-san). Keep IT terms in English (Cloud, API, deploy, "
+    "tenant, microservice, sprint, segment, record, metrics). Emergency-dispatch "
+    "terms: 搬送→vận chuyển cấp cứu, 搬送先→nơi tiếp nhận, 傷病者→nạn nhân, "
+    "出動→điều động, 救急→cấp cứu, メーター(in IT context)→metrics.\n"
+    "- Output exactly one line. Be concise and natural; never add information "
+    "that is not in the source.\n"
+    "- Never use Chinese characters or Japanese kana in the output."
+)
+ROUTER_SYSTEM_PROMPT = os.environ.get("ZT_ROUTER_PROMPT", _ROUTER_DEFAULT_PROMPT)
+# Max concurrent HTTP requests when translating a drained batch. The translate
+# worker hands us up to TRANSLATE_MAX_BATCH sentences at once; fanning them out
+# keeps a batch ~1 round-trip instead of N. Keep modest to avoid hammering the
+# gateway / hitting its rate limits.
+ROUTER_MAX_PARALLEL = int(os.environ.get("ZT_ROUTER_MAX_PARALLEL", "4"))
 
 # ─── Cloud backend (optional, --cloud) ──────────────────────────────────
 # Optional low-latency backend that streams audio to Azure Speech Translation

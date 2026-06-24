@@ -11,6 +11,7 @@ from collections import deque
 from typing import Any
 
 import config
+from src.domain_data import DOMAIN_TERMS, PROPER_NOUNS, KATAKANA_TERMS as _KATAKANA_SOURCE
 from src.japanese_names import SURNAME_MAP, SURNAME_SET, KATAKANA_NAMES
 from src.sentence_aggregator import split_japanese_sentences
 
@@ -59,7 +60,8 @@ _DEFAULT_SYSTEM_PROMPT = (
     "KHÔNG ĐƯỢC dùng chữ Hán/tiếng Trung/tiếng Nhật. "
     "Giữ nguyên thuật ngữ IT: Cloud, AWS, API, deploy, sprint, Lambda, EC2, S3. "
     "Dịch thuật ngữ cứu hộ: 消防＝cứu hỏa, 救急＝cấp cứu, 搬送＝vận chuyển, "
-    "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝xuất kích/điều động, "
+    "傷病者＝nạn nhân, 引き継ぎ＝bàn giao, 出動＝điều động, "
+    "割り込み＝task gián đoạn, 親タスク＝parent task, 子タスク＝child task, "
     "受入＝tiếp nhận. "
     "Dịch ngắn gọn, tự nhiên.\n"
     "QUAN TRỌNG - Giữ tên người Nhật (romaji):\n"
@@ -228,8 +230,12 @@ class LlmTranslator:
             self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0]),
         )
 
-        # NLLB fast-path translator for simple sentences
-        self._fast_translator = self._init_fast_translator()
+        # NLLB fast-path translator for simple sentences (skip when LLM backend selected)
+        self._fast_translator = (
+            None
+            if config.TRANSLATOR_BACKEND == "llm"
+            else self._init_fast_translator()
+        )
 
         try:
             self.warmup()
@@ -355,7 +361,7 @@ digit ::= [0-9]
         if any(name in text for name in _LONG_SURNAMES):
             return "llm"
         # Very short fragments (fillers, simple nouns) → NLLB is fine
-        if n <= 30:
+        if n <= 30 and config.TRANSLATOR_BACKEND == "nllb":
             return "nllb"
         # Longer text or anything ambiguous → LLM for context-aware quality
         return "llm"
@@ -488,190 +494,19 @@ digit ::= [0-9]
         ("いたしました", "しました"),
     ]
 
-    # Katakana IT terms → English. Used as pre-processing substitution (mid-sentence).
-    # Sorted by length (longest first) at substitution time to avoid partial matches.
-    _KATAKANA_TERM_MAP = {
-        "ソリューションアーキテクト": "Solution Architect",
-        "ミッションクリティカル": "mission-critical",
-        "プレゼンテーション": "presentation",
-        "インテグレーション": "integration",
-        "パブリックセクター": "public sector",
-        "プルリクエスト": "pull request",
-        "フレームワーク": "framework",
-        "マイクロサービス": "microservice",
-        "リファインメント": "refinement",
-        "リファクタリング": "refactoring",
-        "インターフェース": "interface",
-        "ステークホルダー": "stakeholder",
-        "ロードバランサー": "load balancer",
-        "クラウドファースト": "Cloud First",
-        "エンタープライズ": "enterprise",
-        "ウェブサービス": "Web Services",
-        "ユニットテスト": "unit test",
-        "コンポーネント": "component",
-        "フィードバック": "feedback",
-        "マイルストーン": "milestone",
-        "イーシーツー": "EC2",
-        "エスキューエス": "SQS",
-        "テクノロジー": "Technology",
-        "トークイベント": "sự kiện thảo luận",
-        "トークイーブメント": "sự kiện thảo luận",
-        "データベース": "database",
-        "パイプライン": "pipeline",
-        "マイグレーション": "migration",
-        "モニタリング": "monitoring",
-        "ロールバック": "rollback",
-        "オンプレミス": "on-premises",
-        "サーバーレス": "serverless",
-        "アーキテクト": "architect",
-        "スケジュール": "lịch trình",
-        "ネットワーク": "network",
-        "ライブラリ": "library",
-        "バックログ": "backlog",
-        "プロジェクト": "project",
-        "スプリント": "sprint",
-        "エンジニア": "engineer",
-        "レビュー": "review",
-        "スクラム": "Scrum",
-        "アジェンダ": "chương trình nghị sự",
-        "アマゾン": "Amazon",
-        "インフラ": "infrastructure",
-        "オンプレ": "on-premises",
-        "クラウド": "Cloud",
-        "コミット": "commit",
-        "コンテナ": "container",
-        "サーバー": "server",
-        "デバッグ": "debug",
-        "デプロイ": "deploy",
-        "ブランチ": "branch",
-        "モジュール": "module",
-        "リリース": "release",
-        "ロボット": "robot",
-        "キャッシュ": "cache",
-        "エスサン": "S3",
-        "マージ": "merge",
-        "ラムダ": "Lambda",
-        "タスク": "task",
-        # Emergency medical / rescue domain katakana terms
-        "バイタル": "vital signs",
-        "トリアージ": "triage",
-        "ストレッチャー": "stretcher",
-        "インシデント": "incident",
-        "コマンド": "command",
-        "コントロール": "control",
-        "オペレーション": "operation",
-        "ディスパッチ": "dispatch",
-        "プロトコル": "protocol",
-        "トリアージタグ": "triage tag",
-        "ホットゾーン": "hot zone",
-        "レスキュー": "rescue",
-        "パラメディック": "paramedic",
-        "メディカル": "medical",
-        "エマージェンシー": "emergency",
-        "マニュアル": "manual",
-        "シミュレーション": "simulation",
-        "トレーニング": "training",
+    # All three term maps built from src/domain_data — single source of truth.
+    # Order of operations in _translate_one:
+    #   1. _PROPER_NOUN_MAP (direct substitution) — replaces known kanji with
+    #      Vietnamese/romaji so glossary hints don't corrupt them.
+    #   2. _BUSINESS_GLOSSARY (parenthetical hints) — injects (tiếng Việt) on
+    #      any kanji still remaining after phase 1.
+    # _BUSINESS_GLOSSARY explicitly excludes PROPER_NOUNS keys via the
+    # `if k not in PROPER_NOUNS` filter, preventing exact-key overlap.
+    _KATAKANA_TERM_MAP: dict[str, str] = _KATAKANA_SOURCE
+    _BUSINESS_GLOSSARY: dict[str, str] = {
+        k: v for k, v in DOMAIN_TERMS.items() if k not in PROPER_NOUNS
     }
-
-    _BUSINESS_GLOSSARY = {
-        "検討": "xem xét",
-        "対応": "xử lý",
-        "確認": "xác nhận",
-        "共有": "chia sẻ",
-        "実装": "triển khai",
-        "移行": "chuyển đổi",
-        "担当": "phụ trách",
-        "従事": "tham gia",
-        "活躍": "hoạt động",
-        "導入": "đưa vào",
-        "運用": "vận hành",
-        "構築": "xây dựng",
-        "開発": "phát triển",
-        "設計": "thiết kế",
-        "管理": "quản lý",
-        "提案": "đề xuất",
-        "説明": "giải thích",
-        "報告": "báo cáo",
-        "推進": "thúc đẩy",
-        "連携": "liên kết",
-        "基幹": "cơ bản/nền tảng",
-        # Emergency medical / rescue domain
-        "搬送": "vận chuyển",
-        "搬送元": "nơi xuất phát vận chuyển",
-        "搬送決定": "quyết định vận chuyển",
-        "傷病者": "nạn nhân",
-        "引き継ぎ": "bàn giao",
-        "出動": "xuất kích/điều động",
-        "指令": "chỉ thị/điều phối",
-        "救急搬送": "vận chuyển cấp cứu",
-        "現場": "hiện trường",
-        "災害": "thảm họa",
-        "患者": "bệnh nhân",
-        "受入": "tiếp nhận",
-        "消防": "cứu hỏa",
-        "救助": "cứu hộ",
-        "案件": "hạng mục",
-        "着手": "bắt đầu triển khai",
-        "進捗": "tiến độ",
-        "受け入れ": "tiếp nhận",
-        "負荷試験": "kiểm tra tải",
-        "レビュー": "review",
-        "設計": "thiết kế",
-        "Ｃross-Tenant": "Cross-Tenant",
-        "クロステナント": "Cross-Tenant",
-        "マルチテナント": "multi-tenant",
-        "ステータス": "trạng thái",
-        "ダッシュボード": "dashboard",
-        "リリース": "release",
-        "トリアージ": "triage",
-        "バイタル": "vital signs",
-        "インシデント": "incident",
-    }
-
-    # Proper nouns (place names, companies) that the model fails to transliterate.
-    # Pre-processed to romaji/English before LLM translation.
-    _PROPER_NOUN_MAP = {
-        # Japanese cities/areas
-        "秋葉原": "Akihabara",
-        "渋谷": "Shibuya",
-        "新宿": "Shinjuku",
-        "東京": "Tokyo",
-        "大阪": "Osaka",
-        "名古屋": "Nagoya",
-        "福岡": "Fukuoka",
-        "北海道": "Hokkaido",
-        "六本木": "Roppongi",
-        # IT Companies
-        "グーグル": "Google",
-        "マイクロソフト": "Microsoft",
-        "アップル": "Apple",
-        "メタ": "Meta",
-        "オラクル": "Oracle",
-        # Organizations
-        "経済産業省": "Bộ Kinh tế Nhật",
-        "デジタル庁": "Cơ quan Kỹ thuật số",
-        "総務省": "Bộ Nội vụ Nhật",
-        # Emergency/rescue organizations (Japan)
-        "東京消防庁": "Sở Cứu hỏa Tokyo",
-        "消防庁": "Cục Cứu hỏa",
-        "消防本部": "Sở chỉ huy Cứu hỏa",
-        "消防団": "Đội Cứu hỏa",
-        "消防署": "Trạm Cứu hỏa",
-        "消防": "Cứu hỏa",
-        "救急": "Cấp cứu",
-        "救急隊": "Đội Cấp cứu",
-        "救急車": "Xe Cấp cứu",
-        "警察": "Cảnh sát",
-        "自衛隊": "Lực lượng Phòng vệ",
-        "日本赤十字社": "Hội Chữ thập đỏ Nhật Bản",
-        "DMAT": "DMAT",
-        "医療機関": "Cơ sở y tế",
-        "病院": "Bệnh viện",
-        # Disaster/incident management systems
-        "EMIS": "EMIS",
-        "広域災害": "Thảm họa diện rộng",
-        "広域地図": "bản đồ diện rộng",
-    }
+    _PROPER_NOUN_MAP: dict[str, str] = dict(PROPER_NOUNS)
 
     # CJK single-digit numerals → Arabic digit (applied before kanji stripping).
     # Compound markers (十百千万億) are stripped separately — they can't be
@@ -701,6 +536,8 @@ digit ::= [0-9]
         "Ước mong là ",
         "Ước mong ",
         "Ước gì ",
+        "Ước tính ",
+        "Ước chừng ",
     )
     _LITERAL_UOC_SOURCE_HINTS = ("夢", "ゆめ", "願望", "願う", "願って", "祈り", "祈る")
 
@@ -795,14 +632,23 @@ digit ::= [0-9]
             except Exception as exc:
                 logger.debug("NLLB fast-path failed, falling back to LLM: %s", exc)
 
-        # Inject Vietnamese hints for kanji business terms (helps LLM accuracy)
+        # Phase 1 — Replace proper nouns with romaji/English/Vietnamese equivalents.
+        # This runs BEFORE glossary hints so that properly-mapped kanji get
+        # fully replaced, preventing the overlap bug (e.g. 消防 in PROPER_NOUNS
+        # replaces 消防→Cứu hỏa before glossary tries to add (cứu hỏa) hint).
+        # Iterate longest-first to avoid substring corruption.
+        pn_map = getattr(self, "_sorted_proper_nouns", None)
+        if pn_map is None:
+            pn_map = sorted(self._PROPER_NOUN_MAP.items(), key=lambda x: -len(x[0]))
+        for noun, replacement in pn_map:
+            processed = processed.replace(noun, replacement)
+
+        # Phase 2 — Inject Vietnamese hints for kanji business terms NOT already
+        # replaced by PROPER_NOUN_MAP. Remaining kanji get parenthetical hints
+        # to guide the LLM.
         for kanji, hint in self._BUSINESS_GLOSSARY.items():
             if kanji in processed:
                 processed = processed.replace(kanji, f"{kanji}({hint})", 1)
-
-        # Replace proper nouns with romaji/English equivalents
-        for noun, replacement in self._PROPER_NOUN_MAP.items():
-            processed = processed.replace(noun, replacement)
 
         try:
             with self._lock:
@@ -1251,6 +1097,13 @@ digit ::= [0-9]
     @staticmethod
     def _clean_translation(text: str) -> str:
         cleaned = text.strip()
+        # Strip business glossary hint artifacts: e.g. 確認(xác nhận) → xác nhận
+        # Pattern: CJK/kana char(s) immediately followed by Vietnamese in parentheses
+        cleaned = re.sub(
+            r'[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF]+\(([^()]+)\)',
+            r'\1',
+            cleaned,
+        ).strip()
         prefixes = ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:", "Dịch sang tiếng Việt:")
         for prefix in prefixes:
             if cleaned.lower().startswith(prefix.lower()):

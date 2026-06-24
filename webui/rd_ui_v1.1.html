@@ -1,0 +1,2370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Speaksy — Full UI (Auto From Default + Flag/Swap Fix)</title>
+
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap');
+
+    :root{
+      --color-primary:#495D92;
+      --color-primary-hover:#3A4D7A;
+
+      --color-success:#2E7D32;
+      --color-danger:#B42318;
+      --color-info:#1F6FEB;
+
+      --color-bg:#F6FAFE;
+      --color-card:#FFFFFF;
+      --color-border:#E5E7EB;
+      --color-border-light:#F0F0F0;
+      --color-text:#1C1C1E;
+      --color-text-secondary:#6B7280;
+
+      --font-family:'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Yu Gothic UI', sans-serif;
+      --font-family-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+
+      --radius-sm:10px;
+      --radius-md:12px;
+      --radius-lg:14px;
+      --radius-pill:999px;
+
+      --shadow-sm:0 1px 3px rgba(0,0,0,0.06);
+      --shadow-md:0 2px 12px rgba(0,0,0,0.10);
+      --shadow-xl:0 12px 44px rgba(0,0,0,0.20);
+
+      --nav-height:60px;
+      --sidebar-w:72px;
+
+      /* 選択表現（統一） */
+      --sel-border: rgba(31,111,235,0.55);
+      --sel-bg: rgba(31,111,235,0.14);
+      --sel-bg-soft: rgba(31,111,235,0.09);
+      --sel-shadow: rgba(31,111,235,0.18);
+
+      /* Live */
+      --live-bg: linear-gradient(180deg, #ffffff 0%, #F2F7FF 100%);
+      --live-border: rgba(31,111,235,0.25);
+    }
+
+    /* ===== Dark theme: override the same tokens ===== */
+    :root[data-theme="dark"]{
+      --color-primary:#5B6FA8;
+      --color-primary-hover:#6D81BC;
+
+      --color-success:#4CAF50;
+      --color-danger:#EF5350;
+      --color-info:#5AA0FF;
+
+      --color-bg:#0F1419;
+      --color-card:#1A2027;
+      --color-border:#2A3138;
+      --color-border-light:#222931;
+      --color-text:#E6EAF0;
+      --color-text-secondary:#9AA4B2;
+
+      --shadow-sm:0 1px 3px rgba(0,0,0,0.40);
+      --shadow-md:0 2px 12px rgba(0,0,0,0.50);
+      --shadow-xl:0 12px 44px rgba(0,0,0,0.65);
+
+      --sel-border: rgba(90,160,255,0.55);
+      --sel-bg: rgba(90,160,255,0.18);
+      --sel-bg-soft: rgba(90,160,255,0.10);
+      --sel-shadow: rgba(90,160,255,0.22);
+
+      --live-bg: linear-gradient(180deg, #1A2027 0%, #1E2630 100%);
+      --live-border: rgba(90,160,255,0.30);
+    }
+    :root[data-theme="dark"] ::-webkit-scrollbar-thumb{ background:#3A434E; }
+    /* Cards/headers that hardcoded a white gradient need to follow the theme. */
+    :root[data-theme="dark"] .card-hd,
+    :root[data-theme="dark"] .historyHd,
+    :root[data-theme="dark"] .panelHd,
+    :root[data-theme="dark"] .dayGroupHd{
+      background:linear-gradient(180deg, var(--color-card) 0%, var(--color-bg) 100%);
+    }
+    :root[data-theme="dark"] .badge,
+    :root[data-theme="dark"] .pillMini,
+    :root[data-theme="dark"] .chip,
+    :root[data-theme="dark"] .countPill,
+    :root[data-theme="dark"] .chev,
+    :root[data-theme="dark"] .cSelectMenu,
+    :root[data-theme="dark"] .timelineItem,
+    :root[data-theme="dark"] .sessRow,
+    :root[data-theme="dark"] .field,
+    :root[data-theme="dark"] .btn{ background:var(--color-card); color:var(--color-text); }
+    :root[data-theme="dark"] .historyBd{
+      background:linear-gradient(180deg, rgba(26,32,39,0.85), rgba(26,32,39,0) 34%), var(--color-card);
+    }
+
+    *{ box-sizing:border-box; margin:0; padding:0; }
+    body{
+      font-family:var(--font-family);
+      font-size:14px;
+      background:var(--color-bg);
+      color:var(--color-text);
+      line-height:1.6;
+      -webkit-font-smoothing:antialiased;
+      transition:background .2s ease, color .2s ease;
+    }
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-thumb { background:#CBD5E1; border-radius:3px; }
+    :focus-visible { outline:2px solid var(--color-primary); outline-offset:2px; }
+
+    /* ===== App chrome ===== */
+    .app{ min-height:100vh; display:flex; flex-direction:column; }
+    .topbar{
+      height:var(--nav-height);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:0 14px;
+      background:var(--color-primary);
+      color:#fff;
+      position:sticky;
+      top:0;
+      z-index:10;
+      gap:12px;
+    }
+    .brand{
+      display:flex; align-items:center; gap:10px;
+      user-select:none; min-width:180px;
+    }
+    .brand-badge{
+      width:28px;height:28px;border-radius:8px;
+      background:rgba(255,255,255,0.18);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:900;
+      flex-shrink:0;
+    }
+    .brand-title{ display:flex; flex-direction:column; gap:2px; line-height:1.0; min-width:0; }
+    .brand-title .t1{ font-size:13px; font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .brand-title .t2{ font-size:11px; font-weight:700; opacity:0.86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    .topControls{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      flex:1;
+      min-width:0;
+    }
+
+    /* ===== Custom select (topbar) ===== */
+    .langBar{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:6px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.22);
+      background:rgba(255,255,255,0.10);
+      backdrop-filter: blur(8px);
+    }
+    .swapTop{
+      width:44px;
+      height:36px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.45);
+      background:linear-gradient(180deg, #ffffff 0%, #F7FAFF 100%);
+      color:var(--color-primary);
+      font-weight:900;
+      cursor:pointer;
+      transition:transform .12s ease-out;
+      flex-shrink:0;
+    }
+    .swapTop:hover{ transform:translateY(-1px); }
+    .swapTop:disabled{ opacity:0.6; cursor:not-allowed; transform:none; }
+
+    .ctaTop{
+      height:40px;
+      padding:0 16px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.70);
+      background:linear-gradient(180deg, #ffffff 0%, #F7FAFF 100%);
+      color:var(--color-primary);
+      font-weight:900;
+      font-size:13px;
+      cursor:pointer;
+      transition:transform .12s ease-out;
+      flex-shrink:0;
+    }
+    .ctaTop:hover{ transform:translateY(-1px); }
+    .ctaTop:disabled{ opacity:0.6; cursor:not-allowed; transform:none; }
+    .ctaTopStop{
+      border:1px solid rgba(255,255,255,0.42);
+      background:rgba(255,255,255,0.12);
+      color:#fff;
+    }
+
+    .cSelect{ position:relative; }
+    .cSelectBtn{
+      height:36px;
+      min-width:180px;
+      max-width:240px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.18);
+      background:rgba(255,255,255,0.10);
+      color:#fff;
+      font-weight:900;
+      font-size:12px;
+      padding:0 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .cSelectBtn:disabled{ opacity:0.6; cursor:not-allowed; }
+    .cSelectLeft{ display:flex; align-items:center; gap:8px; min-width:0; }
+    .cSelectLabel{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cSelectCaret{ opacity:0.9; font-weight:900; }
+    .cSelectMenu{
+      position:absolute;
+      top:calc(100% + 8px);
+      left:0; right:0;
+      background:#fff;
+      border:1px solid var(--color-border);
+      border-radius:14px;
+      box-shadow:var(--shadow-md);
+      padding:6px;
+      z-index:50;
+    }
+    .cSelectItem{
+      width:100%;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:9px 10px;
+      border-radius:12px;
+      border:none;
+      background:transparent;
+      cursor:pointer;
+      text-align:left;
+      font-weight:900;
+      font-size:13px;
+      color:var(--color-text);
+    }
+    .cSelectItem:hover{ background:#F3F4F6; }
+    .cSelectItem.active{ background: rgba(234,242,255,0.9); }
+    .cSelectItem small{ color:var(--color-text-secondary); font-weight:800; }
+
+    /* ===== status ===== */
+    .topRight{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      min-width:240px;
+      gap:10px;
+    }
+
+    /* ===== UI prefs (theme + language) ===== */
+    .uiPrefs{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
+    .prefBtn{
+      width:36px; height:36px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.30);
+      background:rgba(255,255,255,0.12);
+      color:#fff;
+      font-size:15px;
+      cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      transition:transform .12s ease-out, background .12s ease-out;
+    }
+    .prefBtn:hover{ background:rgba(255,255,255,0.22); transform:translateY(-1px); }
+    .uiLangSeg{
+      display:flex;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.24);
+      background:rgba(255,255,255,0.10);
+      overflow:hidden;
+    }
+    .uiLangBtn{
+      border:none;
+      background:transparent;
+      color:rgba(255,255,255,0.75);
+      font-weight:900;
+      font-size:11px;
+      padding:7px 9px;
+      cursor:pointer;
+      transition:background .12s ease-out, color .12s ease-out;
+    }
+    .uiLangBtn:hover{ background:rgba(255,255,255,0.14); color:#fff; }
+    .uiLangBtn.active{ background:#fff; color:var(--color-primary); }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius:var(--radius-pill);
+      border:1px solid rgba(255,255,255,0.35);
+      color:#fff;
+      font-size:12px;
+      font-weight:900;
+      max-width:520px;
+      overflow:hidden;
+      white-space:nowrap;
+      background:rgba(255,255,255,0.12);
+    }
+    .pill .txt{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .pill--idle{ background:rgba(31,111,235,0.20); border-color:rgba(182,208,255,0.42); }
+    .pill--run{  background:rgba(46,125,50,0.22);  border-color:rgba(167,243,208,0.42); }
+    .pill--err{  background:rgba(180,35,24,0.24);  border-color:rgba(253,164,175,0.52); }
+
+    .dot{
+      width:10px; height:10px; border-radius:50%;
+      box-shadow:0 0 0 3px rgba(255,255,255,0.12);
+      flex-shrink:0;
+      background:rgba(255,255,255,0.55);
+    }
+    .dot.idle{ background:#93C5FD; }
+    .dot.run{  background:#86EFAC; }
+    .dot.err{  background:#FDA4AF; }
+
+    .eq{ display:flex; gap:3px; height:16px; align-items:flex-end; margin-left:auto; flex-shrink:0; }
+    .bar{ width:4px; height:100%; background:rgba(255,255,255,0.90); border-radius:3px; transform-origin:bottom; transform:scaleY(0.25); opacity:0.9; }
+    @keyframes eqAnim { 0%{transform:scaleY(0.25);} 35%{transform:scaleY(1);} 70%{transform:scaleY(0.45);} 100%{transform:scaleY(0.25);} }
+    .eq.running .bar:nth-child(1){ animation:eqAnim 0.9s ease-in-out infinite; }
+    .eq.running .bar:nth-child(2){ animation:eqAnim 0.8s ease-in-out infinite 0.05s; }
+    .eq.running .bar:nth-child(3){ animation:eqAnim 0.75s ease-in-out infinite 0.12s; }
+    .eq.running .bar:nth-child(4){ animation:eqAnim 0.85s ease-in-out infinite 0.08s; }
+    .eq.running .bar:nth-child(5){ animation:eqAnim 0.95s ease-in-out infinite 0.02s; }
+
+    /* ===== Body with sidebar ===== */
+    .body{
+      display:grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      min-height:0;
+      flex:1;
+    }
+    .sidebar{
+      background:#fff;
+      border-right:1px solid var(--color-border);
+      padding:10px 8px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .navBtn{
+      width:100%;
+      height:56px;
+      border-radius:16px;
+      border:1px solid var(--color-border);
+      background:#fff;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      transition:all .12s ease-out;
+      position:relative;
+      user-select:none;
+    }
+    .navBtn:hover{ background:#F3F4F6; transform:translateY(-1px); }
+    .navBtn.active{
+      border-color: rgba(31,111,235,0.35);
+      background: rgba(234,242,255,0.85);
+    }
+    .navBtn:disabled{ opacity:0.55; cursor:not-allowed; transform:none; }
+    .navIcon{ width:22px; height:22px; color:var(--color-primary); }
+    .navBtn.active .navIcon{ color: var(--color-info); }
+
+    /* 翻訳中を強調 */
+    .navBtn.running{
+      border-color: rgba(46,125,50,0.35);
+      background: rgba(232,245,233,0.90);
+    }
+    .navBtn.running .navIcon{ color: var(--color-success); }
+    .navBtn.running::after{
+      content:"RUN";
+      position:absolute;
+      right:8px;
+      bottom:8px;
+      font-size:10px;
+      font-weight:900;
+      padding:2px 6px;
+      border-radius:999px;
+      background: rgba(46,125,50,0.18);
+      border:1px solid rgba(46,125,50,0.24);
+      color: var(--color-success);
+    }
+
+    .content{
+      padding:14px 16px;
+      min-height:0;
+    }
+
+    /* ===== Common UI ===== */
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:8px;
+      border-radius:var(--radius-sm);
+      padding:8px 10px;
+      cursor:pointer;
+      font-weight:900;
+      border:1px solid var(--color-border);
+      background:#fff;
+      transition:all .12s ease-out;
+      user-select:none;
+      white-space:nowrap;
+      font-size:13px;
+      color:var(--color-text);
+    }
+    .btn:hover{ background:#F3F4F6; }
+    .btn:disabled{ cursor:not-allowed; opacity:0.55; }
+    .btn-ghost{ background:transparent; }
+
+    .card{
+      background:var(--color-card);
+      border:1px solid var(--color-border);
+      border-radius:var(--radius-lg);
+      box-shadow:var(--shadow-sm);
+      overflow:hidden;
+    }
+    .card-hd{
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      border-bottom:1px solid var(--color-border-light);
+      background:linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    }
+    .card-ttl{ font-size:13px; font-weight:900; color:var(--color-text); }
+    .card-bd{ padding:14px; }
+
+    .field{
+      width:100%;
+      border:1px solid var(--color-border);
+      background:#fff;
+      border-radius:12px;
+      padding:10px 10px;
+      font-family:var(--font-family);
+      font-size:14px;
+      transition:all .12s ease-out;
+      outline:none;
+    }
+    .field:focus{ border-color:var(--color-primary); box-shadow:0 0 0 3px rgba(73,93,146,0.10); }
+    .field:disabled{ background:#F3F4F6; cursor:not-allowed; opacity:0.85; }
+
+    .formrow{ margin-bottom:14px; }
+    .label{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      margin-bottom:7px;
+      font-size:13px; font-weight:900; color:var(--color-text);
+    }
+    .help{ font-size:12px; color:var(--color-text-secondary); margin-top:6px; }
+    .toggle{ display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; font-size:13px; color:var(--color-text); }
+    .toggle input{ accent-color: var(--color-primary); }
+
+    .muted{ color:var(--color-text-secondary); font-size:13px; }
+    .mono{ font-family:var(--font-family-mono); }
+
+    /* ===== Flag icons ===== */
+    .flagFrame{
+      width:18px; height:18px;
+      border-radius:4px;
+      overflow:hidden;
+      border:1px solid rgba(0,0,0,0.12);
+      flex-shrink:0;
+    }
+
+    /* ===== Translate view ===== */
+    .subtitleShell{ display:flex; flex-direction:column; gap:12px; min-height:0; }
+    .liveBox{
+      border:1px solid var(--live-border);
+      border-radius:var(--radius-lg);
+      background:var(--live-bg);
+      box-shadow:var(--shadow-md);
+      padding:16px;
+      position:relative;
+      overflow:hidden;
+    }
+    .liveBox::before{
+      content:"";
+      position:absolute;
+      left:0; top:0; bottom:0;
+      width:5px;
+      background:linear-gradient(180deg, rgba(31,111,235,0.62), rgba(73,93,146,0.32));
+    }
+    .liveTop{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; padding-left:8px; }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:4px 10px;
+      border-radius:999px;
+      border:1px solid var(--color-border);
+      background:#fff;
+      font-size:12px;
+      font-weight:900;
+      color:var(--color-text-secondary);
+      white-space:nowrap;
+    }
+    .liveTime{ font-size:12px; color:var(--color-text-secondary); font-family:var(--font-family-mono); white-space:nowrap; }
+    .liveText{
+      padding-left:8px;
+      font-size:30px;
+      font-weight:900;
+      line-height:1.28;
+      white-space:pre-wrap;
+      word-break:break-word;
+      min-height:110px;
+    }
+    .liveSrc{
+      margin-top:10px;
+      padding-left:8px;
+      font-size:13px;
+      color:var(--color-text-secondary);
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .liveHint{
+      margin-top:12px;
+      padding-left:8px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      font-size:12px;
+      color:var(--color-text-secondary);
+    }
+
+    .historyWrap{
+      border:1px solid var(--color-border);
+      border-radius:var(--radius-lg);
+      background:#fff;
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      box-shadow:var(--shadow-sm);
+      min-height:0;
+    }
+    .historyHd{
+      padding:12px 14px;
+      border-bottom:1px solid var(--color-border-light);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    }
+    .historyTtl{ font-size:13px; font-weight:900; color:var(--color-text); }
+    .historyBd{
+      padding:12px 14px;
+      overflow:auto;
+      min-height:240px;
+      max-height: calc(100vh - var(--nav-height) - 240px);
+      background:
+        linear-gradient(180deg, rgba(248,250,252,0.85), rgba(248,250,252,0.00) 34%),
+        #fff;
+    }
+
+    .timelineItem{
+      display:grid;
+      grid-template-columns: 140px 1fr;
+      gap:12px;
+      padding:10px 10px;
+      border:1px solid var(--color-border-light);
+      border-radius:12px;
+      background:#fff;
+      margin-bottom:8px;
+      cursor:pointer;
+      position:relative;
+    }
+    .timelineItem:hover{ background: rgba(248,250,252,0.9); }
+    .timelineItem.selected{
+      border-color: var(--sel-border);
+      background: var(--sel-bg-soft);
+      box-shadow: 0 0 0 2px var(--sel-shadow) inset;
+    }
+    .tTime{ font-family:var(--font-family-mono); font-size:12px; color:var(--color-text-secondary); line-height:1.2; }
+    .tTag{
+      display:inline-flex;
+      margin-top:8px;
+      font-size:11px;
+      font-weight:900;
+      padding:2px 8px;
+      border-radius:999px;
+      background: rgba(73,93,146,0.10);
+      color: var(--color-primary);
+      border:1px solid rgba(73,93,146,0.12);
+      white-space:nowrap;
+    }
+    .tMain{ min-width:0; position:relative; }
+    .tDst{ font-size:15px; font-weight:900; line-height:1.55; white-space:pre-wrap; word-break:break-word; padding-right:88px; }
+    .tSrc{ margin-top:6px; font-size:13px; color:var(--color-text-secondary); white-space:pre-wrap; word-break:break-word; padding-right:88px; }
+    .copyBadge{
+      position:absolute; top:0; right:0;
+      display:inline-flex; align-items:center; justify-content:center;
+      height:28px; padding:0 10px;
+      border-radius:999px;
+      border:1px solid rgba(31,111,235,0.22);
+      background:#fff;
+      color:var(--color-info);
+      font-size:12px;
+      font-weight:900;
+      cursor:pointer;
+      user-select:none;
+    }
+    .timelineItem.selected .copyBadge{
+      border-color: rgba(31,111,235,0.35);
+      background: rgba(234,242,255,0.95);
+    }
+
+    /* ===== History view (group + collapse + minimap) ===== */
+    .historyLayout{
+      display:grid;
+      grid-template-columns: 520px 1fr;
+      gap:14px;
+      min-height:0;
+      align-items:start;
+    }
+    @media (max-width: 1100px){
+      .historyLayout{ grid-template-columns:1fr; }
+    }
+    .panel{
+      background:var(--color-card);
+      border:1px solid var(--color-border);
+      border-radius:var(--radius-lg);
+      overflow:hidden;
+      min-height:0;
+    }
+    .panelHd{
+      padding:12px 14px;
+      border-bottom:1px solid var(--color-border-light);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:#fff;
+    }
+    .panelTtl{ font-size:13px; font-weight:900; }
+    .panelBd{ padding:12px 14px; min-height:0; }
+
+    .sessionList{
+      max-height: calc(100vh - var(--nav-height) - 120px);
+      overflow:auto;
+      padding-right:6px;
+    }
+    .dayGroup{
+      border:1px solid var(--color-border);
+      border-radius:var(--radius-lg);
+      background:#fff;
+      margin-bottom:12px;
+      overflow:hidden;
+    }
+    .dayGroupHd{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid var(--color-border-light);
+      background: linear-gradient(180deg, rgba(248,250,252,0.95), #fff);
+      cursor:pointer;
+      user-select:none;
+    }
+    .dayGroupHd:hover{ background: rgba(248,250,252,0.95); }
+
+    .dayLeft{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+    .dayLabel{ font-weight:900; font-size:13px; color:#0F172A; white-space:nowrap; }
+    .dayKey{ font-family:var(--font-family-mono); font-size:12px; color:rgba(15,23,42,0.72); white-space:nowrap; }
+
+    .dayRight{ display:flex; align-items:center; gap:10px; }
+    .countPill{
+      font-size:12px;
+      font-weight:900;
+      padding:3px 10px;
+      border-radius:999px;
+      border:1px solid rgba(15,23,42,0.10);
+      background:#fff;
+      color:rgba(15,23,42,0.75);
+      white-space:nowrap;
+    }
+    .chev{
+      width:28px; height:28px;
+      border-radius:10px;
+      display:flex; align-items:center; justify-content:center;
+      border:1px solid var(--color-border);
+      background:#fff;
+      color:rgba(15,23,42,0.75);
+      font-weight:900;
+      flex-shrink:0;
+      transition: transform .12s ease-out;
+    }
+    .chev.open{ transform: rotate(180deg); }
+    .dayGroupBd{ padding:8px 8px; }
+
+    .sessRow{
+      border:1px solid var(--color-border-light);
+      border-radius:12px;
+      background:#fff;
+      padding:10px 10px;
+      margin-bottom:8px;
+      cursor:pointer;
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .sessRow:hover{ background: rgba(248,250,252,0.85); }
+    .sessRow.selected{
+      border-color: var(--sel-border);
+      background: var(--sel-bg);
+      box-shadow: 0 0 0 2px var(--sel-shadow) inset;
+    }
+    .sessRow.selected:hover{ background: var(--sel-bg); }
+
+    .sessMain{ flex:1; min-width:0; }
+    .sessTop{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .sessTitle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-weight:900;
+      font-size:13px;
+      line-height:1.2;
+      flex-wrap:wrap;
+      min-width:0;
+    }
+    .sessMeta{
+      margin-top:6px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      font-family:var(--font-family-mono);
+      font-size:12px;
+      color:var(--color-text-secondary);
+    }
+    .pillMini{
+      display:inline-flex;
+      align-items:center;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid var(--color-border);
+      background:#fff;
+      font-size:12px;
+      font-weight:900;
+      white-space:nowrap;
+      flex-shrink:0;
+    }
+    .pillMini.run{  border-color: rgba(46,125,50,0.22); background: rgba(232,245,233,0.95); color: var(--color-success); }
+    .pillMini.done{ border-color: rgba(31,111,235,0.22); background: rgba(234,242,255,0.95); color: var(--color-info); }
+    .pillMini.err{  border-color: rgba(180,35,24,0.22); background: rgba(255,241,241,0.95); color: var(--color-danger); }
+
+    .chips{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+      margin-top:8px;
+    }
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:2px 8px;
+      border-radius:999px;
+      border:1px solid var(--color-border);
+      background:#fff;
+      font-size:12px;
+      font-weight:900;
+      color:var(--color-text-secondary);
+      white-space:nowrap;
+    }
+
+    .detailOuter{
+      display:grid;
+      grid-template-columns: 12px 1fr;
+      min-height:0;
+      height: calc(100vh - var(--nav-height) - 160px);
+      border-top:1px solid var(--color-border-light);
+    }
+    .minimap{
+      position:relative;
+      background: rgba(15,23,42,0.04);
+      border-right:1px solid var(--color-border-light);
+      cursor:pointer;
+      user-select:none;
+      touch-action:none;
+    }
+    .miniTick{
+      position:absolute;
+      left:2px;
+      right:2px;
+      height:2px;
+      border-radius:2px;
+      opacity:0.9;
+      background: rgba(31,111,235,0.45);
+    }
+    .miniTick.segEnd{ background: rgba(46,125,50,0.55); }
+    .miniTick.punct{ background: rgba(31,111,235,0.45); }
+    .miniTick.selected{ height:4px; background: rgba(31,111,235,0.95); }
+    .miniViewport{
+      position:absolute;
+      left:1px; right:1px;
+      border-radius:6px;
+      border:1px solid rgba(31,111,235,0.30);
+      background: rgba(234,242,255,0.30);
+      pointer-events:none;
+    }
+    .detailScroll{
+      overflow:auto;
+      padding:12px 14px;
+      background:#fff;
+    }
+
+    /* ===== Toast ===== */
+    .toast{
+      position:fixed;
+      left:50%;
+      bottom:18px;
+      transform:translateX(-50%);
+      z-index:100;
+      min-width:340px;
+      max-width:720px;
+      background:var(--color-card);
+      border:1px solid var(--color-border);
+      border-left:4px solid var(--color-info);
+      border-radius:var(--radius-lg);
+      box-shadow:var(--shadow-xl);
+      padding:12px 14px;
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .toast-ttl{ font-weight:900; font-size:13px; }
+    .toast-desc{ font-size:13px; color:var(--color-text-secondary); margin-top:2px; }
+    .toast-x{ margin-left:auto; border:none; background:transparent; cursor:pointer; color:var(--color-text-secondary); padding:4px; font-weight:900; }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext, useId } = React;
+
+    /* ========= Host Bridge (WebView2 | WebSocket | postMessage) ========= */
+    const HostBridge = (() => {
+      const canWebView2 = () => !!(window.chrome && window.chrome.webview);
+      // Served over http(s) ⇒ a host_server is behind us ⇒ talk WebSocket.
+      const useWS = () => !canWebView2() && /^https?:$/.test(location.protocol);
+
+      let ws = null;
+      const handlers = new Set();
+      const outbox = [];
+
+      const connectWS = () => {
+        if (ws) return;
+        const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+        try { ws = new WebSocket(url); }
+        catch (e) { console.warn("[Speaksy] WS connect failed", e); return; }
+        ws.onopen = () => { while (outbox.length) ws.send(JSON.stringify(outbox.shift())); };
+        ws.onmessage = (ev) => {
+          let data; try { data = JSON.parse(ev.data); } catch { return; }
+          handlers.forEach((h) => h(data));
+        };
+        ws.onclose = () => { ws = null; };
+        ws.onerror = () => {};
+      };
+      if (useWS()) connectWS();
+
+      const hasHost = () => canWebView2() || useWS();
+
+      const post = (msg) => {
+        if (canWebView2()) { window.chrome.webview.postMessage(msg); return; }
+        if (useWS()) {
+          if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+          else outbox.push(msg);
+          return;
+        }
+        console.log("[Speaksy:UI->Host]", msg);
+      };
+
+      const onMessage = (handler) => {
+        if (canWebView2()) {
+          const h = (e) => handler(e.data);
+          window.chrome.webview.addEventListener("message", h);
+          return () => window.chrome.webview.removeEventListener("message", h);
+        }
+        if (useWS()) {
+          handlers.add(handler);
+          return () => handlers.delete(handler);
+        }
+        const h = (e) => handler(e.data);
+        window.addEventListener("message", h);
+        return () => window.removeEventListener("message", h);
+      };
+
+      return { canWebView2, hasHost, post, onMessage };
+    })();
+
+    /* ========= Toast ========= */
+    const ToastContext = createContext(null);
+    const ToastProvider = ({ children }) => {
+      const [toast, setToast] = useState(null);
+      const timerRef = useRef(null);
+      const show = useCallback((opts) => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        setToast(opts);
+        const duration = opts.duration ?? 3500;
+        timerRef.current = setTimeout(() => setToast(null), duration);
+      }, []);
+      const close = useCallback(() => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        setToast(null);
+      }, []);
+      return (
+        <ToastContext.Provider value={{ show, close }}>
+          {children}
+          {toast && (
+            <div className="toast" style={{
+              borderLeftColor:
+                toast.variant === "success" ? "var(--color-success)" :
+                toast.variant === "danger"  ? "var(--color-danger)"  :
+                "var(--color-info)"
+            }}>
+              <div style={{flex:1, minWidth:0}}>
+                <div className="toast-ttl">{toast.title ?? "通知"}</div>
+                {toast.description && <div className="toast-desc">{toast.description}</div>}
+              </div>
+              <button className="toast-x" onClick={close} title="閉じる">✕</button>
+            </div>
+          )}
+        </ToastContext.Provider>
+      );
+    };
+    const useToast = () => useContext(ToastContext);
+
+    /* ========= Utils ========= */
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const avg = (arr) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : null;
+
+    const formatTimeMs = (ms) => {
+      try{
+        const d = new Date(ms);
+        const hh = String(d.getHours()).padStart(2,"0");
+        const mm = String(d.getMinutes()).padStart(2,"0");
+        const ss = String(d.getSeconds()).padStart(2,"0");
+        const mmm = String(d.getMilliseconds()).padStart(3,"0");
+        return `${hh}:${mm}:${ss}.${mmm}`;
+      }catch{ return ""; }
+    };
+
+    const formatDateTime = (ms) => {
+      try{
+        const d = new Date(ms);
+        const yyyy = d.getFullYear();
+        const MM = String(d.getMonth()+1).padStart(2,"0");
+        const dd = String(d.getDate()).padStart(2,"0");
+        const hh = String(d.getHours()).padStart(2,"0");
+        const mm = String(d.getMinutes()).padStart(2,"0");
+        const ss = String(d.getSeconds()).padStart(2,"0");
+        return `${yyyy}/${MM}/${dd} ${hh}:${mm}:${ss}`;
+      }catch{ return ""; }
+    };
+
+    const dateKey = (ms) => {
+      const d = new Date(ms);
+      const yyyy = d.getFullYear();
+      const MM = String(d.getMonth()+1).padStart(2,"0");
+      const dd = String(d.getDate()).padStart(2,"0");
+      return `${yyyy}/${MM}/${dd}`;
+    };
+
+    const dateLabel = (ms, lang="ja") => {
+      const k = dateKey(ms);
+      const today = dateKey(Date.now());
+      const y = new Date(); y.setDate(y.getDate()-1);
+      const yesterday = dateKey(+y);
+      const L = (STRINGS[lang] || STRINGS.ja);
+      if (k === today) return L.today;
+      if (k === yesterday) return L.yesterday;
+      return k;
+    };
+
+    const extractSentences = (text) => {
+      const t = (text ?? "");
+      if (!t.trim()) return { complete: [], rest: "" };
+      const re = /.*?[。！？!?](?:\s+|$)|.*?\.(?:\s+|$)/g;
+      const complete = [];
+      let lastIndex = 0;
+      let m;
+      while ((m = re.exec(t)) !== null) {
+        const s = m[0];
+        if (s && s.trim()) {
+          complete.push(s.trim());
+          lastIndex = re.lastIndex;
+        } else break;
+      }
+      const rest = t.slice(lastIndex);
+      return { complete, rest };
+    };
+
+    const loadJson = (key, fallback) => {
+      try{ const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
+      catch{ return fallback; }
+    };
+    const saveJson = (key, obj) => {
+      try{ localStorage.setItem(key, JSON.stringify(obj)); }catch{}
+    };
+
+    /* ========= Theme (dark / light) ========= */
+    const applyTheme = (theme) => {
+      const t = theme === "dark" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", t);
+      try{ localStorage.setItem("speaksy.theme", t); }catch{}
+    };
+    const initialTheme = (() => {
+      try{
+        const saved = localStorage.getItem("speaksy.theme");
+        if (saved === "dark" || saved === "light") return saved;
+      }catch{}
+      return (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        ? "dark" : "light";
+    })();
+
+    /* ========= i18n (UI chrome strings) ========= */
+    const STRINGS = {
+      ja: {
+        appTagline:"気軽に話せる多言語通訳",
+        start:"翻訳開始", stop:"翻訳停止", connTest:"接続テスト",
+        navTranslate:"翻訳", navHistory:"履歴", navSettings:"設定",
+        stIdle:"待機中", stRun:"翻訳中", stErr:"エラー", stDisconnected:"未接続",
+        liveHintTitle:"履歴：文単位", liveHintEngine:"engineで segmentEnd:true 推奨",
+        pastLog:"過去ログ（文単位）", copySel:"選択をコピー", jsonOut:"JSON出力",
+        noActiveSession:"実行中のセッションがありません（開始すると履歴が溜まります）。",
+        noSentenceLog:"まだ文単位ログがありません。",
+        startPrompt:"上部の「翻訳開始」でリアルタイム字幕を開始します",
+        histTitle:"履歴（セッション一覧）", histEmpty:"まだ履歴がありません。翻訳開始→停止で履歴が作成されます。",
+        toggleAll:"全開閉", total:"合計",
+        sessDetail:"セッション詳細（字幕ログ）", pickSession:"左のセッションを選択してください。",
+        noSubLog:"字幕ログがありません。",
+        settings:"設定", settingsLocked:"翻訳中は設定操作を禁止しています（サイドメニューの設定も無効）。",
+        inputDevice:"入力デバイス", showSrc:"原文（SRC）表示", showSrcLabel:"原文を表示する",
+        showSrcHelp:"デフォルトON。翻訳/履歴にSRCも併記します。",
+        partial:"途中結果（partial）", partialLabel:"partialを有効にする",
+        demoMode:"デモモード", demoLabel:"デモモード",
+        autoSave:"自動保存（テキスト出力）間隔（ms）",
+        theme:"テーマ", themeLight:"ライト", themeDark:"ダーク", uiLang:"UI言語",
+        today:"今日", yesterday:"昨日",
+      },
+      vi: {
+        appTagline:"Phiên dịch đa ngôn ngữ thân thiện",
+        start:"Bắt đầu dịch", stop:"Dừng dịch", connTest:"Kiểm tra kết nối",
+        navTranslate:"Dịch", navHistory:"Lịch sử", navSettings:"Cài đặt",
+        stIdle:"Chờ", stRun:"Đang dịch", stErr:"Lỗi", stDisconnected:"Mất kết nối",
+        liveHintTitle:"Lịch sử: theo câu", liveHintEngine:"khuyến nghị segmentEnd:true ở engine",
+        pastLog:"Nhật ký (theo câu)", copySel:"Sao chép mục chọn", jsonOut:"Xuất JSON",
+        noActiveSession:"Chưa có phiên đang chạy (bắt đầu để tích lũy lịch sử).",
+        noSentenceLog:"Chưa có nhật ký theo câu.",
+        startPrompt:"Nhấn \"Bắt đầu dịch\" ở trên để bật phụ đề thời gian thực",
+        histTitle:"Lịch sử (danh sách phiên)", histEmpty:"Chưa có lịch sử. Bắt đầu→Dừng để tạo lịch sử.",
+        toggleAll:"Mở/đóng tất cả", total:"Tổng",
+        sessDetail:"Chi tiết phiên (nhật ký phụ đề)", pickSession:"Chọn một phiên ở bên trái.",
+        noSubLog:"Không có nhật ký phụ đề.",
+        settings:"Cài đặt", settingsLocked:"Không thể chỉnh cài đặt khi đang dịch (menu cài đặt cũng bị khóa).",
+        inputDevice:"Thiết bị nhập", showSrc:"Hiện bản gốc (SRC)", showSrcLabel:"Hiện văn bản gốc",
+        showSrcHelp:"Mặc định BẬT. Hiện cả SRC trong phần dịch/lịch sử.",
+        partial:"Kết quả tạm (partial)", partialLabel:"Bật partial",
+        demoMode:"Chế độ demo", demoLabel:"Chế độ demo",
+        autoSave:"Khoảng tự lưu (xuất text) (ms)",
+        theme:"Giao diện", themeLight:"Sáng", themeDark:"Tối", uiLang:"Ngôn ngữ UI",
+        today:"Hôm nay", yesterday:"Hôm qua",
+      },
+      en: {
+        appTagline:"Friendly multilingual interpreter",
+        start:"Start", stop:"Stop", connTest:"Test connection",
+        navTranslate:"Translate", navHistory:"History", navSettings:"Settings",
+        stIdle:"Idle", stRun:"Translating", stErr:"Error", stDisconnected:"Disconnected",
+        liveHintTitle:"History: per sentence", liveHintEngine:"recommend segmentEnd:true in engine",
+        pastLog:"Past log (per sentence)", copySel:"Copy selection", jsonOut:"Export JSON",
+        noActiveSession:"No active session (start to accumulate history).",
+        noSentenceLog:"No per-sentence log yet.",
+        startPrompt:"Click \"Start\" above to begin real-time subtitles",
+        histTitle:"History (sessions)", histEmpty:"No history yet. Start→Stop creates a session.",
+        toggleAll:"Toggle all", total:"Total",
+        sessDetail:"Session detail (subtitle log)", pickSession:"Select a session on the left.",
+        noSubLog:"No subtitle log.",
+        settings:"Settings", settingsLocked:"Settings are locked while translating (sidebar settings disabled too).",
+        inputDevice:"Input device", showSrc:"Show source (SRC)", showSrcLabel:"Show source text",
+        showSrcHelp:"On by default. Shows SRC alongside translation/history.",
+        partial:"Partial results", partialLabel:"Enable partial",
+        demoMode:"Demo mode", demoLabel:"Demo mode",
+        autoSave:"Auto-save (text output) interval (ms)",
+        theme:"Theme", themeLight:"Light", themeDark:"Dark", uiLang:"UI language",
+        today:"Today", yesterday:"Yesterday",
+      },
+    };
+    const initialUiLang = (() => {
+      try{ const s = localStorage.getItem("speaksy.uiLang"); if (STRINGS[s]) return s; }catch{}
+      return "ja";
+    })();
+
+    /* ========= Icons ========= */
+    const Icon = {
+      translate: () => (
+        <svg className="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" d="M4 5h9a2 2 0 0 1 2 2v2h5v10a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2v-2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 2v8h9V7H4zm7.2 10.2V19h7V11h-5v6.2z"/>
+        </svg>
+      ),
+      history: () => (
+        <svg className="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v14h10V5H7zm2 3h6v2H9V8zm0 4h6v2H9v-2zm0 4h6v2H9v-2z"/>
+        </svg>
+      ),
+      settings: () => (
+        <svg className="navIcon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" d="M19.4 13a7.8 7.8 0 0 0 0-2l2-1.5a.8.8 0 0 0 .2-1l-1.9-3.3a.8.8 0 0 0-1-.3l-2.3 1a7.4 7.4 0 0 0-1.7-1l-.3-2.5A.8.8 0 0 0 11.6 1H8.4a.8.8 0 0 0-.8.7L7.3 4.2a7.4 7.4 0 0 0-1.7 1l-2.3-1a.8.8 0 0 0-1 .3L.4 7.8a.8.8 0 0 0 .2 1L2.6 10a7.8 7.8 0 0 0 0 2l-2 1.5a.8.8 0 0 0-.2 1l1.9 3.3a.8.8 0 0 0 1 .3l2.3-1a7.4 7.4 0 0 0 1.7 1l.3 2.5a.8.8 0 0 0 .8.7h3.2a.8.8 0 0 0 .8-.7l.3-2.5a7.4 7.4 0 0 0 1.7-1l2.3 1a.8.8 0 0 0 1-.3l1.9-3.3a.8.8 0 0 0-.2-1l-2-1.5zM10 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/>
+        </svg>
+      ),
+    };
+
+    /* ========= Flag Icons (SVG) ========= */
+    const FlagIcon = ({ code, size=18 }) => {
+      const uid = useId();
+      const safeUid = String(uid).replace(/:/g, "_");
+      const common = { width:size, height:size, viewBox:"0 0 24 24", style:{flexShrink:0} };
+      const frame = (children) => (
+        <svg {...common} className="flagFrame" aria-hidden="true">
+          <defs>
+            <clipPath id={`r_${code}_${safeUid}`}>
+              <rect x="2" y="4" width="20" height="16" rx="4" ry="4"></rect>
+            </clipPath>
+          </defs>
+          <rect x="2" y="4" width="20" height="16" rx="4" ry="4" fill="#fff" stroke="rgba(0,0,0,0.12)"/>
+          <g clipPath={`url(#r_${code}_${safeUid})`}>{children}</g>
+        </svg>
+      );
+
+      // Auto（自動判定）用：旗が無いのでAバッジ
+      if (code === "auto") return frame(
+        <>
+          <rect x="2" y="4" width="20" height="16" fill="#EEF2FF"/>
+          <circle cx="12" cy="12" r="5.3" fill="#FFFFFF" opacity="0.96"/>
+          <text
+            x="12" y="15"
+            textAnchor="middle"
+            fontSize="10"
+            fontWeight="900"
+            fill="#1F6FEB"
+            fontFamily="ui-sans-serif, system-ui, -apple-system, 'Noto Sans JP'"
+          >A</text>
+        </>
+      );
+
+      if (code === "ja") return frame(<><rect x="2" y="4" width="20" height="16" fill="#fff"/><circle cx="12" cy="12" r="4.2" fill="#D32F2F"/></>);
+      if (code === "vi") return frame(<><rect x="2" y="4" width="20" height="16" fill="#D32F2F"/><path d="M12 8.2l1.1 3.0h3.2l-2.6 1.9 1 3.1L12 14.4 9.3 16.2l1-3.1-2.6-1.9h3.2z" fill="#FBC02D"/></>);
+      if (code === "en") return frame(<>
+        <rect x="2" y="4" width="20" height="16" fill="#fff"/>
+        {[...Array(6)].map((_,i)=>(<rect key={i} x="2" y={4+i*2.66} width="20" height="1.33" fill="#C62828"/>))}
+        <rect x="2" y="4" width="9" height="7.5" fill="#1565C0"/>
+      </>);
+      if (code === "zh") return frame(<><rect x="2" y="4" width="20" height="16" fill="#C62828"/><path d="M7 7.2l.7 2h2.2l-1.8 1.3.7 2.1-1.8-1.2-1.8 1.2.7-2.1-1.8-1.3h2.2z" fill="#FBC02D"/></>);
+      if (code === "ko") return frame(<>
+        <rect x="2" y="4" width="20" height="16" fill="#fff"/>
+        <path d="M12 8.2a3.8 3.8 0 0 1 3.8 3.8c0 2.1-1.7 3.8-3.8 3.8a1.9 1.9 0 1 1 0-3.8c1 0 1.9-.9 1.9-1.9S13 8.2 12 8.2z" fill="#D32F2F"/>
+        <path d="M12 15.8a3.8 3.8 0 0 1-3.8-3.8c0-2.1 1.7-3.8 3.8-3.8a1.9 1.9 0 1 1 0 3.8c-1 0-1.9.9-1.9 1.9S11 15.8 12 15.8z" fill="#1565C0"/>
+      </>);
+      return frame(<rect x="2" y="4" width="20" height="16" fill="#9CA3AF"/>);
+    };
+
+    /* ========= Custom dropdown ========= */
+    const LangDropdown = ({ value, onChange, options, disabled=false }) => {
+      const [open, setOpen] = useState(false);
+      const rootRef = useRef(null);
+
+      const selected = options.find(o => o.value === value) || options[0];
+
+      useEffect(() => {
+        const onDown = (e) => {
+          if (!open) return;
+          if (!rootRef.current) return;
+          if (!rootRef.current.contains(e.target)) setOpen(false);
+        };
+        window.addEventListener("mousedown", onDown);
+        return () => window.removeEventListener("mousedown", onDown);
+      }, [open]);
+
+      return (
+        <div className="cSelect" ref={rootRef}>
+          <button
+            type="button"
+            className="cSelectBtn"
+            disabled={disabled}
+            onClick={()=>setOpen(v=>!v)}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+          >
+            <span className="cSelectLeft">
+              <FlagIcon code={selected.value} />
+              <span className="cSelectLabel">{selected.label}</span>
+            </span>
+            <span className="cSelectCaret">▾</span>
+          </button>
+
+          {open && (
+            <div className="cSelectMenu" role="listbox">
+              {options.map(o => (
+                <button
+                  key={o.value}
+                  type="button"
+                  className={"cSelectItem " + (o.value===value ? "active" : "")}
+                  onClick={()=>{ onChange(o.value); setOpen(false); }}
+                >
+                  <FlagIcon code={o.value} />
+                  <span style={{flex:1, minWidth:0}}>
+                    {o.label} <small>({o.value})</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    /* ========= Simple parts ========= */
+    const Card = ({ title, right=null, children }) => (
+      <div className="card">
+        <div className="card-hd">
+          <div className="card-ttl">{title}</div>
+          {right}
+        </div>
+        <div className="card-bd">{children}</div>
+      </div>
+    );
+
+    const FormRow = ({ label, right=null, children, help=null }) => (
+      <div className="formrow">
+        <div className="label"><div>{label}</div>{right}</div>
+        {children}
+        {help && <div className="help">{help}</div>}
+      </div>
+    );
+
+    const Toggle = ({ checked, onChange, label, disabled=false }) => (
+      <label className="toggle" style={{opacity: disabled?0.65:1, cursor: disabled?"not-allowed":"pointer"}}>
+        <input type="checkbox" checked={!!checked} disabled={disabled} onChange={(e)=>onChange(e.target.checked)} />
+        <span>{label}</span>
+      </label>
+    );
+
+    const Select = ({ value, onChange, options, disabled=false }) => (
+      <select className="field" value={value} disabled={disabled} onChange={(e)=>onChange(e.target.value)}>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+
+    /* =====================================================================================
+       Views (重要): Appの外に出して「再マウント→スクロールが上に戻る」問題を防止
+       ===================================================================================== */
+
+    function TranslateView({
+      toast,
+      t,
+      running,
+      fromLang, toLang,
+      live, showSource,
+      sentenceBuf,
+      activeSession,
+      selectedSegId, setSelectedSegId,
+      copySeg,
+      exportSessionJson
+    }){
+      const segs = activeSession?.transcript || [];
+      const selected = segs.find(x => x.id === selectedSegId) || null;
+
+      const fromMono = fromLang === "auto" ? "AUTO" : fromLang.toUpperCase();
+
+      return (
+        <div className="subtitleShell">
+          <div className="liveBox">
+            <div className="liveTop">
+              <div className="badge">
+                <FlagIcon code={fromLang} size={16} />
+                <span className="mono">{fromMono}</span>
+                <span>→</span>
+                <FlagIcon code={toLang} size={16} />
+                <span className="mono">{toLang.toUpperCase()}</span>
+              </div>
+              <div className="liveTime">{formatTimeMs(live.tsMs)}</div>
+            </div>
+
+            <div className="liveText">
+              {(live.dstText || "").trim() || (running ? "…" : t("startPrompt"))}
+            </div>
+
+            {showSource && (
+              <div className="liveSrc">
+                <span className="mono" style={{fontSize:12, color:"var(--color-text-secondary)"}}>[SRC]</span>{" "}
+                {(live.srcText || "").trim() || "…"}
+              </div>
+            )}
+
+            <div className="liveHint">
+              <div>{t("liveHintTitle")}（{t("liveHintEngine")}）</div>
+              <div className="mono">history:{segs.length} / buf:{(sentenceBuf.dstAcc||"").length} chars</div>
+            </div>
+          </div>
+
+          <div className="historyWrap">
+            <div className="historyHd">
+              <div className="historyTtl">{t("pastLog")}</div>
+              <div style={{display:"flex", gap:8}}>
+                <button className="btn btn-ghost" onClick={()=>{
+                  if (!selected) {
+                    toast.show({variant:"danger", title:t("copySel"), description:t("noSentenceLog")});
+                    return;
+                  }
+                  copySeg(selected, showSource ? "both" : "dst");
+                }}>
+                  {t("copySel")}
+                </button>
+                <button className="btn btn-ghost" onClick={()=>exportSessionJson(activeSession)} disabled={!activeSession}>
+                  {t("jsonOut")}
+                </button>
+              </div>
+            </div>
+
+            <div className="historyBd">
+              {!activeSession ? (
+                <div className="muted">{t("noActiveSession")}</div>
+              ) : segs.length === 0 ? (
+                <div className="muted">
+                  {t("noSentenceLog")}
+                </div>
+              ) : (
+                segs.map(seg => {
+                  const isSel = seg.id === selectedSegId;
+                  return (
+                    <div
+                      key={seg.id}
+                      className={"timelineItem " + (isSel ? "selected" : "")}
+                      onClick={()=>setSelectedSegId(seg.id)}
+                      title="クリックで選択"
+                    >
+                      <div>
+                        <div className="tTime">{formatTimeMs(seg.tsMs)}</div>
+                        <div className="tTag">{seg.reason || "segment"}</div>
+                      </div>
+                      <div className="tMain">
+                        {isSel && (
+                          <div className="copyBadge" onClick={(e)=>{ e.stopPropagation(); copySeg(seg, showSource ? "both" : "dst"); }} title="COPY">
+                            COPY
+                          </div>
+                        )}
+                        <div className="tDst">{seg.dstText || "…"}</div>
+                        {showSource && (
+                          <div className="tSrc">
+                            <span className="mono" style={{fontSize:12}}>[SRC]</span>{" "}
+                            {seg.srcText || "…"}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function HistoryView({
+      t,
+      sessions,
+      selectedSessionId, setSelectedSessionId,
+      selectedSession,
+      selectedHistSegId, setSelectedHistSegId,
+      showSource,
+      copySeg,
+      exportSessionJson,
+    }){
+      // group by day
+      const groups = useMemo(() => {
+        const map = new Map();
+        sessions.forEach(s => {
+          const k = dateKey(s.startTsMs);
+          if (!map.has(k)) map.set(k, []);
+          map.get(k).push(s);
+        });
+        const keys = Array.from(map.keys()).sort((a,b)=> b.localeCompare(a));
+        const labelFor = (ms) => {
+          const k = dateKey(ms);
+          const today = dateKey(Date.now());
+          const y = new Date(); y.setDate(y.getDate()-1);
+          if (k === today) return t("today");
+          if (k === dateKey(+y)) return t("yesterday");
+          return k;
+        };
+        return keys.map(k => {
+          const items = map.get(k).sort((a,b)=> b.startTsMs - a.startTsMs);
+          return { key: k, label: labelFor(items[0].startTsMs), items };
+        });
+      }, [sessions, t]);
+
+      // collapse state (seed once)
+      const [openMap, setOpenMap] = useState({});
+      const seededRef = useRef(false);
+      useEffect(() => {
+        if (seededRef.current) return;
+        seededRef.current = true;
+
+        const today = dateKey(Date.now());
+        const next = {};
+        groups.forEach(g => next[g.key] = (g.key === today));
+        if (!next[today] && groups[0]) next[groups[0].key] = true;
+        setOpenMap(next);
+      }, [groups]);
+
+      // add keys if new day appears
+      useEffect(() => {
+        setOpenMap(prev => {
+          const next = { ...prev };
+          groups.forEach(g => {
+            if (typeof next[g.key] !== "boolean") next[g.key] = false;
+          });
+          return next;
+        });
+      }, [groups]);
+
+      const toggleGroup = (key) => setOpenMap(prev => ({ ...prev, [key]: !prev[key] }));
+
+      // minimap (重要): scrollIntoView廃止 → scrollTop直指定で「上に戻る」事故を防止
+      const segs = selectedSession?.transcript ?? [];
+      const scrollRef = useRef(null);
+      const minimapRef = useRef(null);
+      const [vp, setVp] = useState({ top: 0, height: 20 });
+
+      useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+
+        let raf = 0;
+        const onScroll = () => {
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(() => {
+            const st = el.scrollTop;
+            const sh = el.scrollHeight;
+            const ch = el.clientHeight;
+            const max = Math.max(1, sh - ch);
+            const topRatio = st / max;
+            const heightRatio = ch / Math.max(1, sh);
+            setVp({
+              top: topRatio * 100,
+              height: Math.max(6, heightRatio * 100)
+            });
+          });
+        };
+
+        onScroll();
+        el.addEventListener("scroll", onScroll, { passive:true });
+        return () => {
+          cancelAnimationFrame(raf);
+          el.removeEventListener("scroll", onScroll);
+        };
+      }, [selectedSessionId]);
+
+      useEffect(() => {
+        // セッション切替時：右詳細だけ先頭へ
+        const el = scrollRef.current;
+        if (el) el.scrollTop = 0;
+        setSelectedHistSegId(null);
+      }, [selectedSessionId, setSelectedHistSegId]);
+
+      const jumpByRatio = useCallback((ratio01) => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        el.scrollTop = Math.round(max * ratio01);
+      }, []);
+
+      const onMinimapPointerDown = useCallback((e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const mm = minimapRef.current;
+        if (!mm) return;
+
+        const rect = mm.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const ratio = Math.max(0, Math.min(1, y / rect.height));
+        jumpByRatio(ratio);
+      }, [jumpByRatio]);
+
+      return (
+        <div className="historyLayout">
+          {/* LEFT */}
+          <div className="panel">
+            <div className="panelHd">
+              <div className="panelTtl">{t("histTitle")}</div>
+              <div style={{display:"flex", gap:8}}>
+                <button className="btn" disabled>{t("total")}: {sessions.length}</button>
+                <button
+                  className="btn btn-ghost"
+                  onClick={()=>{
+                    const anyOpen = groups.some(g => openMap[g.key]);
+                    const next = {};
+                    groups.forEach(g => next[g.key] = !anyOpen);
+                    setOpenMap(next);
+                  }}
+                  title={t("toggleAll")}
+                >
+                  {t("toggleAll")}
+                </button>
+              </div>
+            </div>
+
+            <div className="panelBd">
+              {sessions.length === 0 ? (
+                <div className="muted">{t("histEmpty")}</div>
+              ) : (
+                <div className="sessionList">
+                  {groups.map(g => {
+                    const open = !!openMap[g.key];
+                    return (
+                      <div className="dayGroup" key={g.key}>
+                        <div className="dayGroupHd" onClick={()=>toggleGroup(g.key)} title="クリックで折り畳み">
+                          <div className="dayLeft">
+                            <div className="dayLabel">{g.label}</div>
+                            <div className="dayKey">{g.key}</div>
+                          </div>
+                          <div className="dayRight">
+                            <div className="countPill">{g.items.length}件</div>
+                            <div className={"chev " + (open ? "open" : "")}>▾</div>
+                          </div>
+                        </div>
+
+                        {open && (
+                          <div className="dayGroupBd">
+                            {g.items.map(s => {
+                              const sel = s.id === selectedSessionId;
+                              const statusKey = s.status === "running" ? "run" : s.status === "error" ? "err" : "done";
+
+                              const start = formatDateTime(s.startTsMs);
+                              const end = s.endTsMs ? formatDateTime(s.endTsMs) : "—";
+                              const dur = s.endTsMs ? Math.max(0, Math.floor((s.endTsMs - s.startTsMs)/1000)) : null;
+                              const durText = dur !== null ? `${Math.floor(dur/60)}m${String(dur%60).padStart(2,"0")}s` : "—";
+
+                              const segCount = s.transcript?.length ?? 0;
+                              const avgRtf = avg(s.metrics?.rtfSamples || []);
+                              const avgLat = avg(s.metrics?.latencySamples || []);
+
+                              const fromMono = s.fromLang === "auto" ? "AUTO" : String(s.fromLang).toUpperCase();
+
+                              return (
+                                <div
+                                  key={s.id}
+                                  className={"sessRow " + (sel ? "selected" : "")}
+                                  onClick={()=>{
+                                    setSelectedSessionId(s.id);
+                                    setSelectedHistSegId(null);
+                                  }}
+                                  title="クリックで詳細表示"
+                                >
+                                  <div className="sessMain">
+                                    <div className="sessTop">
+                                      <div className="sessTitle">
+                                        <FlagIcon code={s.fromLang} size={16}/>
+                                        <span className="mono">{fromMono}</span>
+                                        <span>→</span>
+                                        <FlagIcon code={s.toLang} size={16}/>
+                                        <span className="mono">{String(s.toLang).toUpperCase()}</span>
+                                      </div>
+                                      <span className={"pillMini " + statusKey}>
+                                        {statusKey === "run" ? "RUN" : statusKey === "err" ? "ERR" : "DONE"}
+                                      </span>
+                                    </div>
+
+                                    <div className="sessMeta">
+                                      <span>start {start}</span>
+                                      <span>end {end}</span>
+                                      <span>dur {durText}</span>
+                                    </div>
+
+                                    <div className="chips">
+                                      <span className="chip">SEG {segCount}</span>
+                                      <span className="chip">avgRTF {avgRtf !== null ? avgRtf.toFixed(2) : "-"}</span>
+                                      <span className="chip">avgLat {avgLat !== null ? Math.round(avgLat)+"ms" : "-"}</span>
+                                    </div>
+
+                                    {s.errorMessage && (
+                                      <div className="muted" style={{color:"var(--color-danger)", marginTop:8, fontWeight:900}}>
+                                        {s.errorMessage}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT */}
+          <div className="panel">
+            <div className="panelHd">
+              <div className="panelTtl">{t("sessDetail")}</div>
+              <div style={{display:"flex", gap:8}}>
+                <button className="btn" disabled={!selectedSession}>
+                  SEG {selectedSession ? selectedSession.transcript.length : "-"}
+                </button>
+                <button className="btn btn-ghost" disabled={!selectedSession} onClick={()=>exportSessionJson(selectedSession)}>
+                  JSON出力
+                </button>
+              </div>
+            </div>
+
+            {!selectedSession ? (
+              <div className="panelBd"><div className="muted">{t("pickSession")}</div></div>
+            ) : (
+              <div className="detailOuter">
+                <div
+                  className="minimap"
+                  ref={minimapRef}
+                  onPointerDown={onMinimapPointerDown}
+                  role="button"
+                  tabIndex={-1}
+                  title="クリックでジャンプ"
+                >
+                  {segs.map((seg, i) => {
+                    const top = segs.length <= 1 ? 0 : (i / (segs.length - 1)) * 100;
+                    const cls = seg.reason === "segmentEnd" ? "segEnd" : "punct";
+                    const isSel = seg.id === selectedHistSegId;
+                    return (
+                      <div
+                        key={seg.id}
+                        className={"miniTick " + cls + (isSel ? " selected" : "")}
+                        style={{ top: `${top}%` }}
+                      />
+                    );
+                  })}
+                  <div className="miniViewport" style={{ top: `${vp.top}%`, height: `${vp.height}%` }} />
+                </div>
+
+                <div className="detailScroll" ref={scrollRef}>
+                  {segs.length === 0 ? (
+                    <div className="muted">{t("noSubLog")}</div>
+                  ) : (
+                    segs.map(seg => {
+                      const isSel = seg.id === selectedHistSegId;
+                      return (
+                        <div
+                          key={seg.id}
+                          className={"timelineItem " + (isSel ? "selected" : "")}
+                          onClick={()=>setSelectedHistSegId(seg.id)}
+                          title="クリックで選択"
+                        >
+                          <div>
+                            <div className="tTime">{formatTimeMs(seg.tsMs)}</div>
+                            <div className="tTag">{seg.reason || "segment"}</div>
+                          </div>
+                          <div className="tMain">
+                            {isSel && (
+                              <div className="copyBadge" onClick={(e)=>{ e.stopPropagation(); copySeg(seg, showSource ? "both" : "dst"); }} title="COPY">
+                                COPY
+                              </div>
+                            )}
+                            <div className="tDst">{seg.dstText || "…"}</div>
+                            {showSource && (
+                              <div className="tSrc">
+                                <span className="mono" style={{fontSize:12}}>[SRC]</span>{" "}
+                                {seg.srcText || "…"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function SettingsView({
+      t,
+      theme, setTheme,
+      uiLang, setUiLang,
+      running,
+      inputDevices,
+      inputDeviceId, setInputDeviceId,
+      showSource, setShowSource,
+      partialResults, setPartialResults,
+      demoMode, setDemoMode,
+      autoSaveMs, setAutoSaveMs,
+      requestDeviceTest,
+    }){
+      return (
+        <div style={{display:"grid", gridTemplateColumns:"1fr", gap:14}}>
+          <Card title={t("theme") + " / " + t("uiLang")}>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+              <FormRow label={t("theme")}>
+                <Select
+                  value={theme}
+                  onChange={setTheme}
+                  options={[
+                    { value:"light", label:t("themeLight") },
+                    { value:"dark", label:t("themeDark") },
+                  ]}
+                />
+              </FormRow>
+              <FormRow label={t("uiLang")}>
+                <Select
+                  value={uiLang}
+                  onChange={setUiLang}
+                  options={[
+                    { value:"ja", label:"日本語" },
+                    { value:"vi", label:"Tiếng Việt" },
+                    { value:"en", label:"English" },
+                  ]}
+                />
+              </FormRow>
+            </div>
+          </Card>
+
+          <Card
+            title={t("settings")}
+            right={<button className="btn" onClick={requestDeviceTest} disabled={running} title={t("connTest")}>{t("connTest")}</button>}
+          >
+            <div className="muted" style={{marginBottom:10}}>
+              {t("settingsLocked")}
+            </div>
+
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+              <div>
+                <FormRow label={t("inputDevice")}>
+                  <Select
+                    value={inputDeviceId}
+                    onChange={setInputDeviceId}
+                    disabled={running}
+                    options={inputDevices.map(d => ({ value:d.id, label:d.name }))}
+                  />
+                </FormRow>
+
+                <FormRow label={t("showSrc")} help={t("showSrcHelp")}>
+                  <Toggle checked={showSource} onChange={setShowSource} disabled={running} label={t("showSrcLabel")} />
+                </FormRow>
+
+                <FormRow label={t("partial")}>
+                  <Toggle checked={partialResults} onChange={setPartialResults} disabled={running} label={t("partialLabel")} />
+                </FormRow>
+
+                <FormRow label={t("demoMode")}>
+                  <Toggle checked={demoMode} onChange={setDemoMode} disabled={running} label={t("demoLabel")} />
+                </FormRow>
+              </div>
+
+              <div>
+                <FormRow
+                  label={t("autoSave")}
+                  right={<span className="mono" style={{fontSize:12, color:"var(--color-text-secondary)"}}>{autoSaveMs}ms</span>}
+                >
+                  <input
+                    className="field"
+                    type="range"
+                    min="200"
+                    max="2000"
+                    step="100"
+                    value={autoSaveMs}
+                    onChange={(e)=>setAutoSaveMs(Number(e.target.value))}
+                    disabled={running}
+                  />
+                </FormRow>
+              </div>
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
+    /* ========= App ========= */
+    function App(){
+      const toast = useToast();
+
+      const [page, setPage] = useState("translate"); // translate | history | settings
+
+      // UI preferences: theme + language (persisted)
+      const [theme, setTheme] = useState(initialTheme);
+      const [uiLang, setUiLang] = useState(initialUiLang);
+      const t = useCallback((key) => (STRINGS[uiLang] && STRINGS[uiLang][key]) || STRINGS.ja[key] || key, [uiLang]);
+      useEffect(() => { applyTheme(theme); }, [theme]);
+      useEffect(() => { try{ localStorage.setItem("speaksy.uiLang", uiLang); }catch{} }, [uiLang]);
+
+      // engine state
+      const [connected, setConnected] = useState(HostBridge.hasHost());
+      const [running, setRunning] = useState(false);
+      const [engineDevice, setEngineDevice] = useState("CPU");
+      const [stateText, setStateText] = useState("Idle");
+      const [rtf, setRtf] = useState(null);
+      const [latencyMs, setLatencyMs] = useState(null);
+      const [lastError, setLastError] = useState(null);
+
+      // settings
+      const [inputDevices, setInputDevices] = useState([
+        { id:"default", name:"(デモ) Default Device" },
+        { id:"vb_cable", name:"(デモ) VB-Audio Cable" },
+      ]);
+      const [inputDeviceId, setInputDeviceId] = useState("default");
+      const [partialResults, setPartialResults] = useState(true);
+      const [autoSaveMs, setAutoSaveMs] = useState(800);
+      const [demoMode, setDemoMode] = useState(!HostBridge.hasHost());
+      const [showSource, setShowSource] = useState(true);
+
+      // langs（To用 / From用で分離）
+      const LANGS_TO = useMemo(() => ([
+        { value:"ja", label:"日本語" },
+        { value:"vi", label:"ベトナム語" },
+        { value:"en", label:"英語" },
+        { value:"zh", label:"中国語" },
+        { value:"ko", label:"韓国語" },
+      ]), []);
+      const LANGS_FROM = useMemo(() => ([
+        { value:"auto", label:"Auto（自動判定）" },
+        ...LANGS_TO
+      ]), [LANGS_TO]);
+
+      // ★ FromのデフォルトをAutoへ
+      const [fromLang, setFromLang] = useState("auto");
+      const [toLang, setToLang] = useState("ja");
+
+      // live
+      const [live, setLive] = useState({ tsMs: Date.now(), srcText:"", dstText:"", partial:false });
+      const [sentenceBuf, setSentenceBuf] = useState({ srcAcc:"", dstAcc:"", lastFinalSrc:"", lastFinalDst:"" });
+
+      // sessions persist
+      const [sessions, setSessions] = useState(() => loadJson("speaksy.sessions", []));
+      const [activeSessionId, setActiveSessionId] = useState(null);
+
+      // translate selection
+      const [selectedSegId, setSelectedSegId] = useState(null);
+
+      // history selection
+      const [selectedSessionId, setSelectedSessionId] = useState(null);
+      const [selectedHistSegId, setSelectedHistSegId] = useState(null);
+
+      useEffect(() => { saveJson("speaksy.sessions", sessions); }, [sessions]);
+
+      // settings forbidden while running
+      useEffect(() => {
+        if (running && page === "settings") setPage("translate");
+      }, [running, page]);
+
+      const canStart = connected || demoMode;
+
+      const statusKind = useMemo(() => {
+        if (!connected && !demoMode) return "err";
+        if (lastError) return "err";
+        if (running) return "run";
+        return "idle";
+      }, [connected, demoMode, lastError, running]);
+
+      const statusLabel = useMemo(() => {
+        if (!connected && !demoMode) return t("stDisconnected");
+        if (lastError) return t("stErr");
+        if (running) return t("stRun");
+        return t("stIdle");
+      }, [connected, demoMode, lastError, running, t]);
+
+      const engineInfo = useMemo(() => {
+        const parts = [];
+        parts.push(stateText);
+        parts.push(engineDevice);
+        if (typeof latencyMs === "number") parts.push(`${latencyMs}ms`);
+        if (typeof rtf === "number") parts.push(`RTF ${rtf.toFixed(2)}`);
+        return parts.join(" / ");
+      }, [stateText, engineDevice, latencyMs, rtf]);
+
+      // ★ Autoのとき swap は意味が崩れるので禁止
+      const swapLang = () => {
+        if (running) return;
+        if (fromLang === "auto") return;
+        const a = fromLang; setFromLang(toLang); setToLang(a);
+      };
+
+      const updateSession = useCallback((id, updater) => {
+        setSessions(prev => prev.map(s => s.id === id ? updater(s) : s));
+      }, []);
+
+      const createSession = useCallback(() => {
+        const now = Date.now();
+        const id = `sess-${now}-${Math.random().toString(16).slice(2)}`;
+        const s = {
+          id,
+          startTsMs: now,
+          endTsMs: null,
+          fromLang, toLang, inputDeviceId,
+          status: "running",
+          errorMessage: null,
+          metrics: { rtfSamples: [], latencySamples: [] },
+          transcript: []
+        };
+        setSessions(prev => [s, ...prev].slice(0, 200));
+        setActiveSessionId(id);
+        setSelectedSessionId(id);
+        return id;
+      }, [fromLang, toLang, inputDeviceId]);
+
+      const finishSession = useCallback((id, status, errorMessage=null) => {
+        updateSession(id, (s) => ({ ...s, endTsMs: Date.now(), status, errorMessage }));
+        setActiveSessionId(null);
+      }, [updateSession]);
+
+      const pushTranscript = useCallback((sessionId, seg) => {
+        updateSession(sessionId, (s) => ({
+          ...s,
+          transcript: [seg, ...s.transcript].slice(0, 1500)
+        }));
+      }, [updateSession]);
+
+      const pushMetrics = useCallback((sessionId, rtfVal, latencyVal) => {
+        updateSession(sessionId, (s) => ({
+          ...s,
+          metrics: {
+            rtfSamples: (typeof rtfVal === "number") ? [rtfVal, ...s.metrics.rtfSamples].slice(0, 500) : s.metrics.rtfSamples,
+            latencySamples: (typeof latencyVal === "number") ? [latencyVal, ...s.metrics.latencySamples].slice(0, 500) : s.metrics.latencySamples,
+          }
+        }));
+      }, [updateSession]);
+
+      const activeSession = useMemo(
+        () => sessions.find(s => s.id === activeSessionId) || null,
+        [sessions, activeSessionId]
+      );
+      const selectedSession = useMemo(
+        () => sessions.find(s => s.id === selectedSessionId) || null,
+        [sessions, selectedSessionId]
+      );
+
+      const onStart = () => {
+        if (!canStart) {
+          toast.show({ variant:"danger", title:"開始できません", description:"未接続です。設定でデバイスを確認してください。" });
+          return;
+        }
+        setLastError(null);
+        setSelectedSegId(null);
+        setLive({ tsMs: Date.now(), srcText:"", dstText:"", partial:false });
+        setSentenceBuf({ srcAcc:"", dstAcc:"", lastFinalSrc:"", lastFinalDst:"" });
+
+        createSession();
+        setRunning(true);
+        setStateText("Starting...");
+
+        HostBridge.post({
+          type:"engine/start",
+          payload:{ inputDeviceId, fromLang, toLang, partialResults, autoSaveMs: Number(autoSaveMs) }
+        });
+
+        toast.show({ variant:"info", title:"Speaksy", description:"翻訳を開始しました。" });
+        setPage("translate");
+      };
+
+      const onStop = () => {
+        setRunning(false);
+        setStateText("Stopping...");
+        HostBridge.post({ type:"engine/stop" });
+
+        if (activeSessionId) {
+          setSentenceBuf(prev => {
+            const src = prev.srcAcc.trim();
+            const dst = prev.dstAcc.trim();
+            if (src || dst) {
+              pushTranscript(activeSessionId, {
+                id: `seg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                tsMs: Date.now(),
+                srcText: src,
+                dstText: dst,
+                reason: "flush"
+              });
+            }
+            return { ...prev, srcAcc:"", dstAcc:"" };
+          });
+          finishSession(activeSessionId, "done");
+        }
+
+        toast.show({ variant:"info", title:"Speaksy", description:"翻訳を停止しました。" });
+      };
+
+      const copySeg = useCallback(async (seg, mode="both") => {
+        const text = mode === "dst" ? (seg.dstText || "") : `[SRC] ${seg.srcText || ""}\n[DST] ${seg.dstText || ""}`;
+        try{
+          await navigator.clipboard.writeText(text);
+          toast.show({ variant:"success", title:"コピーしました", description:`${formatTimeMs(seg.tsMs)} をコピーしました。` });
+        }catch{
+          toast.show({ variant:"danger", title:"コピー失敗", description:"クリップボードにアクセスできませんでした。" });
+        }
+      }, [toast]);
+
+      const exportSessionJson = useCallback((session) => {
+        if (!session) return;
+        const data = { session, transcript: session.transcript.slice().reverse() };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `speaksy_session_${session.id}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.show({ variant:"info", title:"JSON出力", description:"セッションJSONをダウンロードしました。" });
+      }, [toast]);
+
+      const requestDeviceTest = useCallback(() => {
+        if (!HostBridge.hasHost()) {
+          toast.show({ variant:"info", title:"接続テスト", description:"（デモ）ホスト未接続のためHostテストは省略します。" });
+          return;
+        }
+        toast.show({ variant:"info", title:"接続テスト", description:"テスト要求を送信しました…" });
+        HostBridge.post({ type:"engine/testDevice", payload:{ inputDeviceId } });
+      }, [toast, inputDeviceId]);
+
+      // autosave snapshot (host)
+      useEffect(() => {
+        if (!running) return;
+        const iv = clamp(Number(autoSaveMs) || 800, 200, 5000);
+        const t = setInterval(() => {
+          HostBridge.post({
+            type: "ui/textSnapshot",
+            payload: {
+              tsMs: Date.now(),
+              fromLang, toLang,
+              liveSrc: live.srcText ?? "",
+              liveDst: live.dstText ?? "",
+              bufSrc: sentenceBuf.srcAcc ?? "",
+              bufDst: sentenceBuf.dstAcc ?? "",
+            }
+          });
+        }, iv);
+        return () => clearInterval(t);
+      }, [running, autoSaveMs, fromLang, toLang, live.srcText, live.dstText, sentenceBuf.srcAcc, sentenceBuf.dstAcc]);
+
+      // host messages
+      useEffect(() => {
+        const off = HostBridge.onMessage((msg) => {
+          if (!msg || typeof msg !== "object") return;
+
+          if (msg.type === "engine/devices") {
+            const devs = msg.payload?.inputDevices ?? [];
+            if (Array.isArray(devs) && devs.length) setInputDevices(devs);
+            const def = msg.payload?.defaultInputDeviceId;
+            if (def) setInputDeviceId(def);
+            setConnected(true);
+          }
+
+          if (msg.type === "engine/status") {
+            const p = msg.payload || {};
+            if (typeof p.connected === "boolean") setConnected(p.connected);
+            if (typeof p.running === "boolean") setRunning(p.running);
+            if (p.device) setEngineDevice(String(p.device));
+            if (p.state) setStateText(String(p.state));
+            if (typeof p.rtf === "number") setRtf(p.rtf);
+            if (typeof p.latencyMs === "number") setLatencyMs(p.latencyMs);
+
+            if (activeSessionId && (typeof p.rtf === "number" || typeof p.latencyMs === "number")) {
+              pushMetrics(activeSessionId, p.rtf, p.latencyMs);
+            }
+          }
+
+          if (msg.type === "engine/subtitle") {
+            const p = msg.payload || {};
+            const ts = p.tsMs ?? Date.now();
+            const dstText = p.dstText ?? "";
+            const srcText = p.srcText ?? "";
+            const partial = !!p.partial;
+
+            setLive({ tsMs: ts, srcText, dstText, partial });
+
+            const segmentEnd = !!p.segmentEnd;
+            const take = partialResults ? true : !partial;
+            if (!take) return;
+
+            if (segmentEnd && activeSessionId) {
+              pushTranscript(activeSessionId, {
+                id: `seg-${ts}-${Math.random().toString(16).slice(2)}`,
+                tsMs: ts,
+                srcText,
+                dstText,
+                reason: "segmentEnd"
+              });
+              setSentenceBuf(prev => ({...prev, srcAcc:"", dstAcc:"", lastFinalSrc: srcText, lastFinalDst: dstText}));
+              return;
+            }
+
+            if (!partial) {
+              setSentenceBuf(prev => {
+                const srcFull = srcText;
+                const dstFull = dstText;
+
+                const srcAdd = (srcFull.startsWith(prev.lastFinalSrc || "")) ? srcFull.slice((prev.lastFinalSrc||"").length) : srcFull;
+                const dstAdd = (dstFull.startsWith(prev.lastFinalDst || "")) ? dstFull.slice((prev.lastFinalDst||"").length) : dstFull;
+
+                let srcAcc = prev.srcAcc + srcAdd;
+                let dstAcc = prev.dstAcc + dstAdd;
+
+                const dstSplit = extractSentences(dstAcc);
+                const srcSplit = extractSentences(srcAcc);
+                const n = Math.min(dstSplit.complete.length, srcSplit.complete.length);
+
+                if (activeSessionId) {
+                  for (let i=0; i<n; i++){
+                    pushTranscript(activeSessionId, {
+                      id: `seg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                      tsMs: Date.now(),
+                      srcText: srcSplit.complete[i],
+                      dstText: dstSplit.complete[i],
+                      reason: "punct"
+                    });
+                  }
+                }
+
+                srcAcc = srcSplit.complete.slice(n).join(" ") + (srcSplit.rest || "");
+                dstAcc = dstSplit.complete.slice(n).join(" ") + (dstSplit.rest || "");
+                return { srcAcc, dstAcc, lastFinalSrc: srcFull, lastFinalDst: dstFull };
+              });
+            }
+          }
+
+          if (msg.type === "engine/error") {
+            const m = msg.payload?.message ?? "エラーが発生しました";
+            setLastError({ tsMs: Date.now(), message: m });
+            toast.show({ variant:"danger", title:"エンジンエラー", description:m, duration:6000 });
+            if (activeSessionId) finishSession(activeSessionId, "error", m);
+          }
+
+          if (msg.type === "engine/testResult") {
+            const ok = !!msg.payload?.ok;
+            const m = msg.payload?.message || (ok ? "利用可能です" : "利用できません");
+            toast.show({ variant: ok ? "success" : "danger", title:"接続テスト", description:m, duration:4500 });
+          }
+        });
+
+        HostBridge.post({ type:"ui/ready", payload:{ app:"Speaksy", version:"full-autoFrom-1" } });
+        HostBridge.post({ type:"engine/listDevices" });
+
+        return () => off && off();
+      }, [toast, partialResults, activeSessionId, pushTranscript, pushMetrics, finishSession]);
+
+      // demo generator
+      useEffect(() => {
+        if (!demoMode) return;
+        if (!running) return;
+
+        let c = 0;
+        const samples = [
+          {src:"Tôi sẽ gửi tài liệu sau cuộc họp.", dst:"会議後に資料を送ります。"},
+          {src:"Mọi người có ý kiến gì không?", dst:"皆さん、意見はありますか？"},
+          {src:"Phần này cần ưu tiên vì thời hạn rất gấp!", dst:"この部分は期限が非常に厳しいので優先が必要です！"},
+        ];
+
+        const t = setInterval(() => {
+          c++;
+          const s = samples[c % samples.length];
+          const p1 = s.dst.slice(0, Math.floor(s.dst.length * 0.45));
+          const p2 = s.dst.slice(0, Math.floor(s.dst.length * 0.75));
+
+          const emit = (text, partial) => {
+            const ts = Date.now();
+            setLive({ tsMs: ts, srcText: s.src, dstText: text, partial });
+            setStateText("Running");
+            setEngineDevice("CPU");
+            setRtf(0.62 + (Math.random()*0.08 - 0.04));
+            setLatencyMs(620 + Math.floor(Math.random()*120));
+
+            if (!partial && activeSessionId) {
+              pushTranscript(activeSessionId, {
+                id: `seg-${ts}-${Math.random().toString(16).slice(2)}`,
+                tsMs: ts,
+                srcText: s.src,
+                dstText: s.dst,
+                reason: "demo"
+              });
+            }
+          };
+
+          emit(p1, true);
+          setTimeout(()=>emit(p2, true), 220);
+          setTimeout(()=>emit(s.dst, false), 460);
+        }, 1900);
+
+        return () => clearInterval(t);
+      }, [demoMode, running, activeSessionId, pushTranscript]);
+
+      const statusPillClass =
+        statusKind==="err" ? "pill--err" :
+        statusKind==="run" ? "pill--run" : "pill--idle";
+
+      return (
+        <div className="app">
+          <header className="topbar">
+            <div className="brand">
+              <div className="brand-badge">S</div>
+              <div className="brand-title">
+                <div className="t1">Speaksy</div>
+                <div className="t2">{t("appTagline")}</div>
+              </div>
+            </div>
+
+            <div className="topControls">
+              <div className="langBar" title="言語ペア">
+                <LangDropdown value={fromLang} onChange={setFromLang} options={LANGS_FROM} disabled={running}/>
+                <button
+                  className="swapTop"
+                  onClick={swapLang}
+                  disabled={running || fromLang === "auto"}
+                  title={fromLang === "auto" ? "Auto検出時は入替できません" : "From/To入替"}
+                >⇄</button>
+                <LangDropdown value={toLang} onChange={setToLang} options={LANGS_TO} disabled={running}/>
+              </div>
+
+              {!running ? (
+                <button className="ctaTop" onClick={onStart} disabled={!canStart} title={t("start")}>{t("start")}</button>
+              ) : (
+                <button className={"ctaTop ctaTopStop"} onClick={onStop} title={t("stop")}>{t("stop")}</button>
+              )}
+            </div>
+
+            <div className="topRight">
+              <div className="uiPrefs">
+                <button
+                  className="prefBtn"
+                  onClick={()=>setTheme(theme==="dark"?"light":"dark")}
+                  title={theme==="dark" ? t("themeLight") : t("themeDark")}
+                  aria-label="toggle theme"
+                >{theme==="dark" ? "☀" : "☾"}</button>
+                <div className="uiLangSeg" role="group" aria-label={t("uiLang")}>
+                  {["ja","vi","en"].map(lng => (
+                    <button
+                      key={lng}
+                      className={"uiLangBtn " + (uiLang===lng ? "active" : "")}
+                      onClick={()=>setUiLang(lng)}
+                      title={t("uiLang")}
+                    >{lng.toUpperCase()}</button>
+                  ))}
+                </div>
+              </div>
+              <span className={"pill " + statusPillClass}>
+                <span className={"dot " + statusKind}></span>
+                <span className="txt">{statusLabel} / {engineInfo}</span>
+                <span className={"eq " + (running ? "running" : "")} aria-hidden="true">
+                  <span className="bar"></span><span className="bar"></span><span className="bar"></span><span className="bar"></span><span className="bar"></span>
+                </span>
+              </span>
+            </div>
+          </header>
+
+          <div className="body">
+            <aside className="sidebar">
+              <button
+                className={"navBtn " + (page==="translate" ? "active" : "") + (running ? " running" : "")}
+                onClick={()=>setPage("translate")}
+                title={t("navTranslate")}
+              >
+                <Icon.translate/>
+              </button>
+
+              <button
+                className={"navBtn " + (page==="history" ? "active" : "")}
+                onClick={()=>setPage("history")}
+                title={t("navHistory")}
+              >
+                <Icon.history/>
+              </button>
+
+              <button
+                className={"navBtn " + (page==="settings" ? "active" : "")}
+                onClick={()=>!running && setPage("settings")}
+                disabled={running}
+                title={t("navSettings")}
+              >
+                <Icon.settings/>
+              </button>
+            </aside>
+
+            <main className="content">
+              {page === "translate" && (
+                <TranslateView
+                  toast={toast}
+                  t={t}
+                  running={running}
+                  fromLang={fromLang}
+                  toLang={toLang}
+                  live={live}
+                  showSource={showSource}
+                  sentenceBuf={sentenceBuf}
+                  activeSession={activeSession}
+                  selectedSegId={selectedSegId}
+                  setSelectedSegId={setSelectedSegId}
+                  copySeg={copySeg}
+                  exportSessionJson={exportSessionJson}
+                />
+              )}
+
+              {page === "history" && (
+                <HistoryView
+                  t={t}
+                  sessions={sessions}
+                  selectedSessionId={selectedSessionId}
+                  setSelectedSessionId={setSelectedSessionId}
+                  selectedSession={selectedSession}
+                  selectedHistSegId={selectedHistSegId}
+                  setSelectedHistSegId={setSelectedHistSegId}
+                  showSource={showSource}
+                  copySeg={copySeg}
+                  exportSessionJson={exportSessionJson}
+                />
+              )}
+
+              {page === "settings" && (
+                <SettingsView
+                  t={t}
+                  theme={theme}
+                  setTheme={setTheme}
+                  uiLang={uiLang}
+                  setUiLang={setUiLang}
+                  running={running}
+                  inputDevices={inputDevices}
+                  inputDeviceId={inputDeviceId}
+                  setInputDeviceId={setInputDeviceId}
+                  showSource={showSource}
+                  setShowSource={setShowSource}
+                  partialResults={partialResults}
+                  setPartialResults={setPartialResults}
+                  demoMode={demoMode}
+                  setDemoMode={setDemoMode}
+                  autoSaveMs={autoSaveMs}
+                  setAutoSaveMs={setAutoSaveMs}
+                  requestDeviceTest={requestDeviceTest}
+                />
+              )}
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<ToastProvider><App/></ToastProvider>);
+  </script>
+</body>
+</html>

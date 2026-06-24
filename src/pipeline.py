@@ -103,7 +103,10 @@ class TranslationPipeline:
             self._translate_thread = None
             return
 
-        backend_label = "LLM/Qwen2.5" if config.TRANSLATOR_BACKEND == "llm" else "NLLB"
+        backend_label = {
+            "llm": "LLM/Qwen2.5",
+            "router": "Router/9router",
+        }.get(config.TRANSLATOR_BACKEND, "NLLB")
         self.display.info(f"Loading models (ASR + {backend_label} translator)...")
         logger.info("Loading models: ASR + %s translator", backend_label)
         # Load ASR first (small ~160MB) before the heavier translator so that
@@ -142,6 +145,21 @@ class TranslationPipeline:
 
     def _create_translator(self):
         """Create the translation engine based on config.TRANSLATOR_BACKEND."""
+        if config.TRANSLATOR_BACKEND == "router":
+            try:
+                from src.router_translator import RouterTranslator
+
+                return RouterTranslator()
+            except ImportError as e:
+                self.display.info(
+                    f"[Warning] requests not installed, falling back to NLLB: {e}"
+                )
+                return NllbTranslator()
+            except Exception as e:  # gateway misconfig/unreachable at init
+                self.display.info(
+                    f"[Warning] router backend init failed, falling back to NLLB: {e}"
+                )
+                return NllbTranslator()
         if config.TRANSLATOR_BACKEND == "llm":
             try:
                 from src.llm_translator import LlmTranslator
@@ -302,6 +320,11 @@ class TranslationPipeline:
         max_s = config.VAD_MAX_UTTERANCE_MS / 1000.0
         reason = "max_utterance" if duration_s >= max_s - (config.VAD_SILENCE_MS / 1000.0) else "silence"
         while not self.stop_event.is_set() or self._draining.is_set():
+            # If draining is set but the redecode consumer is already dead, the
+            # segment will never be consumed — abandon it and let the caller
+            # know via the log event below so loss is never silent.
+            if self._draining.is_set() and self._redecode_thread is not None and not self._redecode_thread.is_alive():
+                break
             try:
                 self._segment_queue.put(utterance, timeout=0.5)
                 ev.log("segment_finalized", duration_s=duration_s,
@@ -487,6 +510,11 @@ class TranslationPipeline:
         # orderly shutdown drain (_draining) we keep enqueueing past stop_event so
         # the re-decode worker's drained tail utterances are never abandoned.
         while not self.stop_event.is_set() or self._draining.is_set():
+            # If the translate thread is dead, text can never be consumed —
+            # abandon the item to prevent the ASR worker from blocking forever.
+            if self._translate_thread is not None and not self._translate_thread.is_alive():
+                ev.log("enqueue_abandoned", seq=seq, text=japanese, reason="translate_thread_dead")
+                return
             try:
                 self._text_queue.put(item, timeout=0.2)
                 return
@@ -508,25 +536,30 @@ class TranslationPipeline:
         """
         while not self.stop_event.is_set() or self._draining.is_set():
             try:
-                first = self._text_queue.get(timeout=0.2)
-            except queue.Empty:
-                continue
-            batch = [first]
-            while len(batch) < config.TRANSLATE_MAX_BATCH:
                 try:
-                    batch.append(self._text_queue.get_nowait())
+                    first = self._text_queue.get(timeout=0.2)
                 except queue.Empty:
-                    break
-            try:
-                self._translate_and_display_batch(batch)
-            except Exception as exc:  # keep the translate thread alive
-                # A dead translate thread stops draining _text_queue, which makes
-                # _enqueue_text backpressure-block the ASR worker forever and lose
-                # the rest of the meeting — so never let a batch kill the loop.
-                logger.error("Translate batch error: %s", exc, exc_info=True)
-                self.display.info(f"[Translate error] {exc}")
-                for seq, jp, _ in batch:
-                    ev.log("translate_error", seq=seq, text=jp, error=str(exc))
+                    continue
+                batch = [first]
+                while len(batch) < config.TRANSLATE_MAX_BATCH:
+                    try:
+                        batch.append(self._text_queue.get_nowait())
+                    except queue.Empty:
+                        break
+                try:
+                    self._translate_and_display_batch(batch)
+                except Exception as exc:  # keep the translate thread alive
+                    logger.error("Translate batch error: %s", exc, exc_info=True)
+                    self.display.info(f"[Translate error] {exc}")
+                    for seq, jp, _ in batch:
+                        ev.log("translate_error", seq=seq, text=jp, error=str(exc))
+            except Exception as exc:
+                # Safety net: any unhandled exception (including the queue.Empty
+                # or batch-getting logic) must not kill the translate thread.
+                # A dead translate thread means _enqueue_text blocks forever
+                # and the entire pipeline freezes.
+                logger.error("Translate worker inner error: %s", exc, exc_info=True)
+                continue
 
     def _translate_and_display_batch(self, batch: list[tuple[int, str, bool]]) -> None:
         started = monotonic()

@@ -5,6 +5,10 @@
 venv/
 env/
 
+# Local secrets / per-machine config (.env.example IS committed as a template)
+.env
+.env.local
+
 # Desloppify local state
 .desloppify/
 

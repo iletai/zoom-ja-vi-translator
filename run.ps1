@@ -1,10 +1,11 @@
-# Run the Zoom JA->VI translator on Windows (PowerShell).
+﻿# Run the Zoom JA->VI translator on Windows (PowerShell).
 #
 # Uses WASAPI loopback to capture system audio natively — no virtual cable needed.
 # First run: creates venv, installs deps, downloads models automatically.
 #
 # Usage:
 #   ./run.ps1                 # LLM mode (default, best quality for IT meetings)
+#   ./run.ps1 -Router         # translate via local 9router gateway (no local LLM — recommended)
 #   ./run.ps1 -Nllb           # use NLLB-600M (faster, less context-aware)
 #   ./run.ps1 -ListDevices    # list audio devices and exit
 #   ./run.ps1 -Mic            # capture microphone instead of system audio
@@ -16,7 +17,9 @@ param(
     [switch]$Mic,
     [switch]$Log,
     [switch]$Nllb,
-    [switch]$Streaming
+    [switch]$Router,
+    [switch]$Streaming,
+    [string]$Model = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,9 +51,21 @@ if (-not (Test-Path ".venv\.deps_installed")) {
     python -m pip install --upgrade pip -q
     python -m pip install webrtcvad-wheels -q
     python -m pip install "ctranslate2==4.5.0" "setuptools<70" -q
-    python -m pip install "llama-cpp-python>=0.2.90,<0.3.0" --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu -q
-    python -m pip install numpy soundcard sherpa-onnx transformers sentencepiece huggingface_hub tqdm pip-system-certs certifi -q
+    # llama-cpp-python is only needed for the local LLM backend. -Router and
+    # -Nllb don't use it, so skip the heavy build/download in those modes.
+    if (-not $Router -and -not $Nllb) {
+        python -m pip install "llama-cpp-python>=0.2.90,<0.3.0" --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu -q
+    }
+    python -m pip install numpy scipy soundcard sherpa-onnx transformers sentencepiece huggingface_hub tqdm pip-system-certs certifi -q
+    # RouterTranslator talks to 9router over HTTP.
+    python -m pip install requests -q
     New-Item -ItemType File -Path ".venv\.deps_installed" | Out-Null
+}
+
+# requests may be missing if the venv was created before -Router existed.
+python -c "import requests" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    python -m pip install requests -q
 }
 
 # ─── Download ASR models (first run only) ─────────────────────────────────
@@ -60,7 +75,23 @@ if (-not (Test-Path "models\reazonspeech-k2-v2")) {
 }
 
 # ─── Translation backend selection ────────────────────────────────────────
-if ($Nllb) {
+if ($Router) {
+    # 9router: offload translation to the local OpenAI-compatible gateway.
+    # No Qwen/llama-cpp model is downloaded or loaded — ASR still runs locally.
+    $env:ZT_TRANSLATOR = "router"
+    if ($Model -ne "") { $env:ZT_ROUTER_MODEL = $Model }
+    $routerModel = if ($Model -ne "") { $Model } else { "gh/claude-haiku-4.5 (default)" }
+    $backendName = "9router -> $routerModel"
+
+    $routerBase = if ($env:ZT_ROUTER_BASE_URL) { $env:ZT_ROUTER_BASE_URL } else { "http://127.0.0.1:20128/v1" }
+    $routerKey = if ($env:ZT_ROUTER_KEY) { $env:ZT_ROUTER_KEY } else { "sk_9router" }
+    $alive = python -c "import requests,sys; sys.exit(0 if requests.get('$routerBase/models', headers={'Authorization':'Bearer $routerKey'}, timeout=3).ok else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [warn] 9router not reachable at $routerBase - start it first. Pipeline will fall back to NLLB on init failure." -ForegroundColor Red
+    } else {
+        Write-Host "  [ok] 9router reachable at $routerBase" -ForegroundColor Green
+    }
+} elseif ($Nllb) {
     $env:ZT_TRANSLATOR = "nllb"
     $backendName = "NLLB-600M (fast, no context)"
 } else {
@@ -98,7 +129,7 @@ chcp 65001 | Out-Null
 if (-not $ListDevices) {
     Write-Host ""
     Write-Host "  Zoom JA->VI Translator" -ForegroundColor Cyan
-    Write-Host "  ──────────────────────" -ForegroundColor DarkGray
+    Write-Host "  ----------------------" -ForegroundColor DarkGray
     Write-Host "  Translator : $backendName" -ForegroundColor White
     Write-Host "  ASR        : ReazonSpeech k2-v2 + hotwords" -ForegroundColor White
     Write-Host "  Audio      : $(if ($Mic) {'Microphone'} else {'System audio (WASAPI loopback)'})" -ForegroundColor White

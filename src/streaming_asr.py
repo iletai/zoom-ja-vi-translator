@@ -27,6 +27,12 @@ except ModuleNotFoundError:
 
 logger = logging.getLogger(__name__)
 
+# Safety limit on decode_stream() iterations per audio block.
+# Each iteration consumes ~one chunk of internal frames; 200 loops is a generous
+# upper bound for 0.2 s of audio, preventing an infinite loop if is_ready()
+# never returns False (e.g. malformed audio or driver bug).
+_MAX_DECODE_LOOPS = 200
+
 
 class StreamingJapaneseASR:
     """Incremental Japanese ASR over a single continuous 16 kHz audio stream."""
@@ -61,8 +67,13 @@ class StreamingJapaneseASR:
             return
         self.stream.accept_waveform(self.SAMPLE_RATE, audio)
         self._append_overlap(audio)
+        _decode_loops = 0
         while self.recognizer.is_ready(self.stream):
             self.recognizer.decode_stream(self.stream)
+            _decode_loops += 1
+            if _decode_loops > _MAX_DECODE_LOOPS:
+                logger.warning("Streaming ASR decode loop exceeded %d iterations (possible infinite loop guard)", _MAX_DECODE_LOOPS)
+                break
 
     def partial(self) -> str:
         """Return the current (possibly incomplete) Japanese hypothesis."""
@@ -85,16 +96,26 @@ class StreamingJapaneseASR:
             return
 
         self.stream.accept_waveform(self.SAMPLE_RATE, overlap)
+        _decode_loops = 0
         while self.recognizer.is_ready(self.stream):
             self.recognizer.decode_stream(self.stream)
+            _decode_loops += 1
+            if _decode_loops > _MAX_DECODE_LOOPS:
+                logger.warning("Streaming ASR reset decode loop exceeded %d iterations (possible infinite loop guard)", _MAX_DECODE_LOOPS)
+                break
 
     def finalize_tail(self) -> None:
         """Flush trailing audio so the last partial reflects all fed samples."""
         tail = np.zeros(int(0.5 * self.SAMPLE_RATE), dtype=np.float32)
         self.stream.accept_waveform(self.SAMPLE_RATE, tail)
         self.stream.input_finished()
+        _decode_loops = 0
         while self.recognizer.is_ready(self.stream):
             self.recognizer.decode_stream(self.stream)
+            _decode_loops += 1
+            if _decode_loops > _MAX_DECODE_LOOPS:
+                logger.warning("Streaming ASR finalize decode loop exceeded %d iterations (possible infinite loop guard)", _MAX_DECODE_LOOPS)
+                break
 
     def _append_overlap(self, audio: np.ndarray) -> None:
         max_samples = self._overlap_window_samples()

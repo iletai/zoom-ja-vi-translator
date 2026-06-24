@@ -77,6 +77,10 @@ class AudioCapture(threading.Thread):
         self.stop_event = stop_event
         self.error: Exception | None = None
         self.dropped_blocks = 0
+        # Optional pre-ASR conditioning (high-pass + soft AGC); None when disabled.
+        from src.audio_enrich import make_enricher
+
+        self._enricher = make_enricher(int(config.SAMPLE_RATE))
 
     def run(self) -> None:
         try:
@@ -97,6 +101,8 @@ class AudioCapture(threading.Thread):
                     audio = recorder.record(numframes=block_frames)
                     mono = _to_mono_float32(audio)
                     resampled = _resample_linear(mono, source_rate, int(config.SAMPLE_RATE))
+                    if self._enricher is not None:
+                        resampled = self._enricher.process(resampled)
                     self._put_drop_oldest(resampled)
         except Exception as exc:
             logger.error("Audio capture fatal error: %s", exc, exc_info=True)

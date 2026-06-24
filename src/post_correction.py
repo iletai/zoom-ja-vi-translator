@@ -55,6 +55,19 @@ PHRASE_CORRECTIONS: dict[str, str] = {
     "感染していて": "案件でいって",
     "大森アート": "大森の方",
     "化け物": "確認もの",
+    # ASR misrecognitions from 2026-06-09 meeting
+    "風のタスク": "フォローのタスク",
+    "断作業": "タスク",
+    "ウェアタスク": "親タスク",
+    "ビント": "スプリント",
+    "ビデー": "API",
+    "寒い週": "案件週",
+    # ASR misrecognitions from 2026-06-24 meeting (katakana mishearings)
+    # Evidence: speaker said filter/parent-task but ASR emitted these forms.
+    "フィリット": "フィルター",      # "filter" misheard
+    "フィリッと": "フィルター",
+    "マタスク": "親タスク",          # "parent task" (oya-task) misheard
+    "ウェブフィルター": "Webフィルター",
 }
 
 # Context-aware corrections: only apply when surrounding text matches a pattern
