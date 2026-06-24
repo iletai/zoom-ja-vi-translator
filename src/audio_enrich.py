@@ -31,6 +31,99 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# Which resampling backend is in use — resolved once, logged once.
+_RESAMPLE_BACKEND: str | None = None
+
+
+def resample_audio(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    """Resample mono float32 audio with anti-aliasing.
+
+    Downsampling (the common case here: 48 kHz loopback → 16 kHz ASR) MUST
+    low-pass below the new Nyquist first, or high frequencies fold back into the
+    speech band and smear formants/sibilants — a pure ASR-accuracy loss. Plain
+    linear interpolation (np.interp) does no such filtering.
+
+    Backend preference, best → acceptable:
+      1. soxr  — VHQ band-limited, fastest C impl (pip install soxr)
+      2. scipy.signal.resample_poly — polyphase FIR, also anti-aliased
+      3. np.interp — last-resort linear (kept so audio never hard-fails)
+    """
+    global _RESAMPLE_BACKEND
+    samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+    if samples.size == 0 or source_rate == target_rate:
+        return samples.astype(np.float32, copy=False)
+
+    # soxr — best quality/speed.
+    try:
+        import soxr
+
+        out = soxr.resample(samples, source_rate, target_rate, quality="VHQ")
+        if _RESAMPLE_BACKEND != "soxr":
+            _RESAMPLE_BACKEND = "soxr"
+            logger.info("Resampling backend: soxr VHQ (%d→%d Hz)", source_rate, target_rate)
+        return np.asarray(out, dtype=np.float32)
+    except Exception:  # noqa: BLE001 - soxr not installed / failed; try next
+        pass
+
+    # scipy polyphase — anti-aliased, no extra dep beyond scipy.
+    try:
+        from math import gcd
+
+        from scipy.signal import resample_poly
+
+        g = gcd(int(source_rate), int(target_rate))
+        up = int(target_rate) // g
+        down = int(source_rate) // g
+        out = resample_poly(samples.astype(np.float64), up, down).astype(np.float32)
+        if _RESAMPLE_BACKEND != "resample_poly":
+            _RESAMPLE_BACKEND = "resample_poly"
+            logger.info("Resampling backend: scipy.resample_poly (%d→%d Hz)", source_rate, target_rate)
+        return out
+    except Exception:  # noqa: BLE001 - scipy missing; fall back to linear
+        pass
+
+    # Linear interpolation — works everywhere, but aliases on downsample.
+    if _RESAMPLE_BACKEND != "linear":
+        _RESAMPLE_BACKEND = "linear"
+        logger.warning(
+            "Resampling backend: np.interp linear (no anti-alias). "
+            "Install 'soxr' or 'scipy' for better ASR accuracy."
+        )
+    target_length = max(1, int(round(samples.size * target_rate / source_rate)))
+    if samples.size == 1:
+        return np.full(target_length, samples[0], dtype=np.float32)
+    src_pos = np.linspace(0.0, samples.size - 1, num=samples.size, dtype=np.float64)
+    dst_pos = np.linspace(0.0, samples.size - 1, num=target_length, dtype=np.float64)
+    return np.interp(dst_pos, src_pos, samples).astype(np.float32)
+
+
+def normalize_utterance(audio: np.ndarray) -> np.ndarray:
+    """Peak-normalize a whole utterance toward a target before ASR.
+
+    Applied once to a complete recognized segment (not per block), so the
+    recognizer sees a consistent loudness across utterances without gain pumping
+    mid-word. Silence (peak below the noise floor) is returned unchanged so a
+    near-silent segment is not blown up into noise. Gain is capped.
+
+    Config: AUDIO_UTTERANCE_NORM (on/off), AUDIO_UTTERANCE_PEAK (target peak),
+    AUDIO_UTTERANCE_MAX_GAIN, AUDIO_NOISE_FLOOR_RMS (silence guard).
+    """
+    if not getattr(config, "AUDIO_UTTERANCE_NORM", False):
+        return audio
+    x = np.asarray(audio, dtype=np.float32).reshape(-1)
+    if x.size == 0:
+        return x
+    peak = float(np.max(np.abs(x)))
+    floor = float(getattr(config, "AUDIO_NOISE_FLOOR_RMS", 0.005))
+    if peak < floor:
+        return x  # silence — don't amplify
+    target = float(getattr(config, "AUDIO_UTTERANCE_PEAK", 0.95))
+    max_gain = float(getattr(config, "AUDIO_UTTERANCE_MAX_GAIN", 10.0))
+    gain = min(target / peak, max_gain)
+    if gain <= 1.0:
+        return x  # already loud enough — never attenuate (clip guard covers peaks)
+    return np.clip(x * np.float32(gain), -1.0, 1.0).astype(np.float32, copy=False)
+
 
 class AudioEnricher:
     """Per-stream audio conditioner: high-pass + soft AGC. Not thread-safe."""

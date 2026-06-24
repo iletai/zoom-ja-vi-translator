@@ -56,7 +56,7 @@ if (-not (Test-Path ".venv\.deps_installed")) {
     if (-not $Router -and -not $Nllb) {
         python -m pip install "llama-cpp-python>=0.2.90,<0.3.0" --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu -q
     }
-    python -m pip install numpy scipy soundcard sherpa-onnx transformers sentencepiece huggingface_hub tqdm pip-system-certs certifi -q
+    python -m pip install numpy scipy soxr soundcard sherpa-onnx transformers sentencepiece huggingface_hub tqdm pip-system-certs certifi -q
     # RouterTranslator talks to 9router over HTTP.
     python -m pip install requests -q
     New-Item -ItemType File -Path ".venv\.deps_installed" | Out-Null

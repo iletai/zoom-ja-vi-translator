@@ -3,6 +3,10 @@
 # Core numerics
 numpy>=1.26,<2
 
+# High-quality anti-aliased audio resampling (loopback 48k -> 16k ASR input).
+# Falls back to scipy.resample_poly, then linear, if absent.
+soxr>=0.3.7
+
 # Cross-platform audio loopback capture
 soundcard>=0.4.3
 

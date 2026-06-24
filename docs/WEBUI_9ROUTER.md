@@ -148,8 +148,22 @@ recognition accuracy on real meeting audio. Dependency-free (numpy; uses scipy's
 - **Soft AGC** (`ZT_AUDIO_TARGET_RMS`, default 0.05) gains quiet speakers up to a
   consistent loudness, capped (`ZT_AUDIO_MAX_GAIN`) and floored
   (`ZT_AUDIO_NOISE_FLOOR_RMS`) so silence/room tone is never amplified.
+- **Anti-aliased resampling** (`resample_audio`): loopback audio is usually
+  48 kHz and must be downsampled to 16 kHz for ASR. Plain linear interpolation
+  aliases high frequencies into the speech band (smears consonants); we use
+  `soxr` (VHQ) when installed, then `scipy.resample_poly`, then linear as a
+  last resort. Install `soxr` for the accuracy win.
+- **Per-utterance loudness normalization** (`normalize_utterance`,
+  `ZT_AUDIO_UTTERANCE_NORM`): peak-normalizes a whole recognized segment toward
+  `ZT_AUDIO_UTTERANCE_PEAK` (0.95) right before ASR — a consistent
+  utterance-level loudness helps the recognizer without pumping gain mid-word.
 
-Toggle the whole stage with `ZT_AUDIO_ENRICH` (default on). It runs in
+ASR decode tuning (`src/asr.py`): `ZT_ASR_BLANK_PENALTY` (default 1.0) penalizes
+the transducer blank symbol to reduce dropped sentence onsets / clipped leading
+mora; applied only when the installed sherpa-onnx build accepts it. The VAD
+pre-onset collar is 320 ms (`ZT_VAD_PREROLL_MS`) to keep soft onsets.
+
+Toggle the per-block stage with `ZT_AUDIO_ENRICH` (default on). It runs in
 `AudioCapture` between resample and enqueue, ~0.5 ms per 200 ms block.
 
 ### Conversational / meeting register

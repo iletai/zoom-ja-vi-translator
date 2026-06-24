@@ -54,17 +54,16 @@ def _to_mono_float32(audio: np.ndarray) -> np.ndarray:
 
 
 def _resample_linear(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
-    samples = np.asarray(samples, dtype=np.float32)
-    if samples.size == 0 or source_rate == target_rate:
-        return samples.astype(np.float32, copy=False)
+    """Anti-aliased resample (soxr/scipy with linear fallback).
 
-    target_length = max(1, int(round(samples.size * target_rate / source_rate)))
-    if samples.size == 1:
-        return np.full(target_length, samples[0], dtype=np.float32)
+    Kept under the original name for call-site stability; the real work is in
+    audio_enrich.resample_audio, which low-pass filters before downsampling so
+    high frequencies don't alias into the speech band (an ASR-accuracy loss the
+    old plain np.interp implementation caused).
+    """
+    from src.audio_enrich import resample_audio
 
-    source_positions = np.linspace(0.0, samples.size - 1, num=samples.size, dtype=np.float64)
-    target_positions = np.linspace(0.0, samples.size - 1, num=target_length, dtype=np.float64)
-    return np.interp(target_positions, source_positions, samples).astype(np.float32)
+    return resample_audio(samples, source_rate, target_rate)
 
 
 class AudioCapture(threading.Thread):

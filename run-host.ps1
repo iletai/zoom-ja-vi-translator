@@ -71,7 +71,7 @@ if (-not $Demo) {
         python -m pip install --upgrade pip -q
         python -m pip install webrtcvad-wheels -q
         python -m pip install "ctranslate2==4.5.0" "setuptools<70" -q
-        python -m pip install numpy scipy soundcard sherpa-onnx transformers sentencepiece huggingface_hub tqdm -q
+        python -m pip install numpy scipy soxr soundcard sherpa-onnx transformers sentencepiece huggingface_hub tqdm -q
         New-Item -ItemType File -Path ".venv\.host_real_deps_installed" | Out-Null
     }
 

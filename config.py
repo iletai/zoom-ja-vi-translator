@@ -119,6 +119,15 @@ AUDIO_MAX_GAIN = float(os.environ.get("ZT_AUDIO_MAX_GAIN", "8.0"))
 # noise up during pauses).
 AUDIO_NOISE_FLOOR_RMS = float(os.environ.get("ZT_AUDIO_NOISE_FLOOR_RMS", "0.005"))
 
+# Per-utterance loudness normalization, applied to a WHOLE recognized utterance
+# right before ASR (not per-200ms block). A consistent utterance-level loudness
+# helps the recognizer's log-mel features; doing it on the aggregated segment
+# (rather than per block) avoids pumping gain mid-word. Peak-normalizes toward
+# this target with a gain cap; silence (below the noise floor) is left alone.
+AUDIO_UTTERANCE_NORM = _env_flag("ZT_AUDIO_UTTERANCE_NORM", True)
+AUDIO_UTTERANCE_PEAK = float(os.environ.get("ZT_AUDIO_UTTERANCE_PEAK", "0.95"))
+AUDIO_UTTERANCE_MAX_GAIN = float(os.environ.get("ZT_AUDIO_UTTERANCE_MAX_GAIN", "10.0"))
+
 # Recognized-text queue between ASR and translation. Unlike raw audio (which
 # cannot block capture indefinitely), text here is already-recognized speech —
 # dropping it permanently loses meeting content, the user's exact complaint. So
@@ -139,7 +148,9 @@ VAD_AGGRESSIVENESS = int(os.environ.get("ZT_VAD_AGGRESSIVENESS", "3"))
 # Pre-onset collar: prepend this much audio before each detected speech onset so
 # aggressiveness=3 (which fires natural boundaries in continuous/background audio)
 # does not clip the quiet leading mora of the first word (気象庁 -> 町長 without it).
-VAD_PREROLL_MS = int(os.environ.get("ZT_VAD_PREROLL_MS", "240"))
+# 320ms (up from 240) gives aggressiveness=3 more margin to keep soft onsets that
+# were still being clipped in real meeting logs.
+VAD_PREROLL_MS = int(os.environ.get("ZT_VAD_PREROLL_MS", "320"))
 VAD_FRAME_MS = 30             # webrtcvad supports 10 / 20 / 30 ms frames
 # End an utterance after this much trailing silence (lower = lower latency).
 # 300ms separates fast back-and-forth dialog turns so two speakers are not merged
@@ -206,6 +217,12 @@ ASR_HOTWORDS_FILE = Path(
     os.environ.get("ZT_HOTWORDS_FILE", str(PROJECT_ROOT / "hotwords_it.txt"))
 )
 ASR_HOTWORDS_SCORE = float(os.environ.get("ZT_HOTWORDS_SCORE", "1.5"))
+# Penalize the transducer's blank symbol during decoding. >0 makes the model
+# emit fewer blanks, which reduces dropped sentence onsets / clipped leading
+# mora (a real failure in meeting audio). 0 = off (model default). Only applied
+# when the installed sherpa-onnx build accepts the parameter (checked at init).
+# Keep modest: too high inserts spurious tokens. ~1.0 is a safe start.
+ASR_BLANK_PENALTY = float(os.environ.get("ZT_ASR_BLANK_PENALTY", "1.0"))
 ASR_DECODING_METHOD = os.environ.get(
     "ZT_ASR_DECODING",
     "modified_beam_search" if ASR_HOTWORDS_FILE.is_file() else "greedy_search"

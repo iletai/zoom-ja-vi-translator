@@ -41,6 +41,23 @@ class JapaneseASR:
             recognizer_kwargs["hotwords_file"] = str(hotwords_path)
             recognizer_kwargs["hotwords_score"] = config.ASR_HOTWORDS_SCORE
 
+        # blank_penalty reduces dropped onsets, but only some sherpa-onnx builds
+        # accept it — probe the signature so an older wheel doesn't raise.
+        blank_penalty = float(getattr(config, "ASR_BLANK_PENALTY", 0.0))
+        if blank_penalty > 0.0:
+            try:
+                import inspect
+
+                params = inspect.signature(
+                    sherpa_onnx.OfflineRecognizer.from_transducer
+                ).parameters
+                if "blank_penalty" in params:
+                    recognizer_kwargs["blank_penalty"] = blank_penalty
+                else:
+                    logger.info("sherpa-onnx build has no blank_penalty param; skipping")
+            except (TypeError, ValueError):
+                pass
+
         self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(**recognizer_kwargs)
         self.warmup()
 
@@ -52,6 +69,12 @@ class JapaneseASR:
 
         duration_s = audio.size / self.SAMPLE_RATE
         is_silence = bool(np.max(np.abs(audio)) <= self.SILENCE_THRESHOLD)
+        # Normalize the whole utterance to a consistent loudness before decoding
+        # (helps the recognizer's features; no-op when disabled or on silence).
+        if not is_silence:
+            from src.audio_enrich import normalize_utterance
+
+            audio = normalize_utterance(audio)
         stream = self.recognizer.create_stream()
         try:
             stream.accept_waveform(self.SAMPLE_RATE, audio)

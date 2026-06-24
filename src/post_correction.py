@@ -68,6 +68,9 @@ PHRASE_CORRECTIONS: dict[str, str] = {
     "フィリッと": "フィルター",
     "マタスク": "親タスク",          # "parent task" (oya-task) misheard
     "ウェブフィルター": "Webフィルター",
+    # Acronyms spoken as katakana → canonical Latin form (matches domain_data).
+    "ディーマット": "DMAT",          # emergency medical assistance team
+    "イーミス": "EMIS",              # emergency medical info system
 }
 
 # Context-aware corrections: only apply when surrounding text matches a pattern
