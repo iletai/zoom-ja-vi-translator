@@ -15,9 +15,26 @@ translation step is offloaded.
 
 ---
 
-## 1. Quick start (Windows)
+## 1. Quick start
 
 Start the 9router gateway first (it listens on `http://127.0.0.1:20128/v1`), then:
+
+**macOS / Linux:**
+
+```bash
+# Terminal CLI, local ASR + 9router translation (no Qwen download):
+./run.sh --router                 # bootstraps .env from .env.example on first use
+./run.sh --router --streaming     # lower-latency streaming ASR
+./run.sh --router --mic           # capture the microphone instead of system audio
+
+# Web UI in a browser (set the backend explicitly):
+ZT_TRANSLATOR=router ZT_HOST_REAL=1 ./run-host.sh   # http://127.0.0.1:8770
+```
+
+macOS system-audio capture needs [BlackHole](https://github.com/ExistentialAudio/BlackHole)
+(or an Aggregate Device) as the loopback input; use `--mic` to skip that.
+
+**Windows:**
 
 ```powershell
 # Terminal CLI, local ASR + 9router translation (no Qwen download):
@@ -112,7 +129,7 @@ dispatch, 救急搬送システム):
 | `ZT_TRANSLATOR` | `nllb` | set to `router` to use 9router |
 | `ZT_ROUTER_BASE_URL` | `http://127.0.0.1:20128/v1` | gateway base URL |
 | `ZT_ROUTER_KEY` | `sk_9router` | bearer token |
-| `ZT_ROUTER_MODEL` | `gh/claude-haiku-4.5` | model id (see `GET /v1/models`) |
+| `ZT_ROUTER_MODEL` | `gh/claude-sonnet-4.6` | model id (see `GET /v1/models`) |
 | `ZT_ROUTER_TEMPERATURE` | `0.1` | sampling temperature |
 | `ZT_ROUTER_MAX_TOKENS` | `180` | per-segment output cap |
 | `ZT_ROUTER_TIMEOUT` | `6` | per-request seconds (live = fail fast) |
@@ -210,10 +227,13 @@ offline ReazonSpeech. So missing `streaming-zipformer-multi` is not an error.
   replacements are injected now; Vietnamese terms go through the prompt glossary.
 - **Subtitles contain commentary / questions / quoted text** (e.g. `"Chưa hiểu." -
   Cần gì? Chi tiết vấn đề?`) — the model is in *assistant mode*, translating then
-  adding its own remarks. This happens if `ROUTER_SYSTEM_PROMPT` is the verbose
-  local-Qwen prompt (it tells the model to "help" when input looks broken). The
-  default `_ROUTER_DEFAULT_PROMPT` is a terse translate-only prompt that forbids
-  this; override via `ZT_ROUTER_PROMPT` only with an equally strict prompt.
+  adding its own remarks. Two causes: (1) a **weak model** ignores the
+  translate-only prompt — `gh/claude-haiku-4.5` returns `部長`→"Vâng, tôi đây ạ"
+  and prepends "Vâng/ạ" to most lines even with `ZT_ROUTER_CONTEXT=0`; the
+  default is `gh/claude-sonnet-4.6`, which obeys the prompt. (2) `ROUTER_SYSTEM_PROMPT`
+  is the verbose local-Qwen prompt (it tells the model to "help" when input looks
+  broken) — the default `_ROUTER_DEFAULT_PROMPT` is a terse translate-only prompt;
+  override via `ZT_ROUTER_PROMPT` only with an equally strict prompt.
 - **Translations slow / stalling** — lower `ZT_ROUTER_TIMEOUT`, set
   `ZT_ROUTER_CONTEXT=0`, or pick a faster model. Check the gateway is reachable:
   `GET http://127.0.0.1:20128/v1/models`.

@@ -550,8 +550,16 @@ LLM_SYSTEM_PROMPT = os.environ.get(
 # loudly at the gateway rather than shipping a real token in the repo.
 ROUTER_BASE_URL = os.environ.get("ZT_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1")
 ROUTER_API_KEY = os.environ.get("ZT_ROUTER_KEY", "")
-ROUTER_MODEL = os.environ.get("ZT_ROUTER_MODEL", "gh/claude-haiku-4.5")
-ROUTER_TEMPERATURE = float(os.environ.get("ZT_ROUTER_TEMPERATURE", "0.1"))
+# Default sonnet, not haiku: haiku-4.5 ignores the translate-only prompt and
+# slips into assistant mode on spoken fragments — 部長 ("manager", calling the
+# boss) came back as "Vâng, tôi đây ạ", and most lines got a hallucinated
+# "Vâng/ạ" prefix. sonnet-4.6 obeys the prompt (部長→"Trưởng phòng") at ~+0.6s/seg.
+ROUTER_MODEL = os.environ.get("ZT_ROUTER_MODEL", "gh/claude-sonnet-4.6")
+# 0.0 (greedy): MT evidence (Peng et al. EMNLP 2023, arXiv:2303.13780) shows
+# translation quality degrades monotonically as temperature rises — translation
+# is analytical, not creative. Effect is larger for distant/non-English-centric
+# pairs (so more so for JA→VI). Gateway accepts 0.0 fine (verified).
+ROUTER_TEMPERATURE = float(os.environ.get("ZT_ROUTER_TEMPERATURE", "0.0"))
 # 180 target tokens comfortably covers a JA→VI sentence (ratio ~1:1.2) without
 # the latency of the old 256 ceiling. Raise only if long sentences get clipped.
 ROUTER_MAX_TOKENS = int(os.environ.get("ZT_ROUTER_MAX_TOKENS", "180"))
@@ -592,7 +600,26 @@ _ROUTER_DEFAULT_PROMPT = (
     "出動→điều động, 救急→cấp cứu, メーター(in IT context)→metrics.\n"
     "- Output exactly one line. Be concise and natural; never add information "
     "that is not in the source.\n"
-    "- Never use Chinese characters or Japanese kana in the output."
+    "- Never use Chinese characters or Japanese kana in the output.\n"
+    # Few-shot exemplars anchor the input→output pattern that weak models drop
+    # (research: Peng et al. + OpenAI/Anthropic prompt-eng docs). They include
+    # the exact trap cases: 部長 is the TITLE "Trưởng phòng" (addressing the
+    # boss), NOT a greeting to answer; a bare keigo fragment must keep its
+    # politeness WITHOUT gaining an invented "Vâng"; a trailing-off fragment
+    # stays unfinished. These are the failures observed live with weak models.
+    "Examples (translate the Japanese, output only the Vietnamese):\n"
+    "部長 → Trưởng phòng\n"
+    "時間早まったの → Thời gian bị đẩy sớm lên à\n"
+    "ですから新幹線の時間も1時間早めた方がよろしいかと → "
+    "Vậy nên tàu Shinkansen cũng dời sớm 1 tiếng thì tốt hơn ạ\n"
+    "はい → Vâng\n"
+    "この素材は吸水性に大変優れておりまして → "
+    "Vật liệu này có khả năng hút ẩm rất tốt...\n"
+    # Sandwich defense: restate the task AFTER the examples so it is the most
+    # recent instruction before the model sees the user input.
+    "Remember: you are a translation engine. Translate the Japanese in the next "
+    "user message to Vietnamese and output ONLY that translation — never reply "
+    "to it, never add anything."
 )
 ROUTER_SYSTEM_PROMPT = os.environ.get("ZT_ROUTER_PROMPT", _ROUTER_DEFAULT_PROMPT)
 # Max concurrent HTTP requests when translating a drained batch. The translate

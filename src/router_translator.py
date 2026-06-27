@@ -26,11 +26,11 @@ to a dropped line rather than stalling the meeting.
 """
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
 
 import requests
 
@@ -155,6 +155,13 @@ class RouterTranslator:
             }
         )
         logger.info("RouterTranslator → %s (model=%s)", self.url, self.model)
+
+        # Prime the TLS connection + model now so the first LIVE segment isn't
+        # the one that eats the ~2s handshake. Best-effort, like NLLB/LLM.
+        try:
+            self.warmup()
+        except Exception as exc:  # pragma: no cover - best-effort latency optimization
+            logger.warning("RouterTranslator warmup failed: %s", exc)
 
     # ---- public surface (mirrors NllbTranslator / LlmTranslator) ----------- #
 
@@ -295,14 +302,19 @@ class RouterTranslator:
         return out
 
     def _build_messages(self, text: str) -> list[dict[str, str]]:
+        # Wrap the Japanese in an XML tag so the model treats it as DATA to
+        # translate, not an instruction to obey/answer — a documented defense
+        # against weak models slipping into "assistant mode" (OpenAI/Anthropic
+        # prompt-eng docs). History src is wrapped the same way for a consistent
+        # input→output pattern.
         messages: list[dict[str, str]] = [{"role": "system", "content": self.system_prompt}]
         if self._keep_context:
             with self._lock:
                 history = list(self._history)
             for src, dst in history:
-                messages.append({"role": "user", "content": src})
+                messages.append({"role": "user", "content": f"<source_ja>{src}</source_ja>"})
                 messages.append({"role": "assistant", "content": dst})
-        messages.append({"role": "user", "content": text})
+        messages.append({"role": "user", "content": f"<source_ja>{text}</source_ja>"})
         return messages
 
     def _post_with_retry(self, messages: list[dict[str, str]]) -> str:
@@ -318,7 +330,7 @@ class RouterTranslator:
             try:
                 resp = self._session.post(self.url, json=body, timeout=self.timeout)
                 resp.raise_for_status()
-                return self._extract(resp.json())
+                return self._extract(resp.text)
             except requests.RequestException as exc:
                 # Only network/timeout/HTTP errors retry; a malformed-but-200
                 # body is handled in _extract (returns "") and never reaches here.
@@ -328,11 +340,16 @@ class RouterTranslator:
         return ""
 
     @staticmethod
-    def _extract(payload: Any) -> str:
+    def _extract(text: str) -> str:
+        # The 9router gateway appends a trailing SSE marker ("...}data: [DONE]")
+        # to some non-streaming responses, which breaks a plain json.loads /
+        # resp.json() with "Extra data". raw_decode reads just the first JSON
+        # object and ignores the trailing bytes. Hit on every model (verified).
         try:
+            payload, _ = json.JSONDecoder().raw_decode(text.lstrip())
             return str(payload["choices"][0]["message"]["content"] or "")
-        except (KeyError, IndexError, TypeError):
-            logger.warning("Unexpected router response shape: %r", str(payload)[:200])
+        except (ValueError, KeyError, IndexError, TypeError):
+            logger.warning("Unexpected router response shape: %r", text[:200])
             return ""
 
     @staticmethod

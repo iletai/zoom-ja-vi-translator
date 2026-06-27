@@ -13,8 +13,27 @@
 #   ./run.sh --list-devices  # list audio devices and exit
 #   ./run.sh --mic           # capture the default microphone instead
 #   ./run.sh --streaming     # low-latency live captions (extra args pass through)
+#   ./run.sh --router        # translate via the 9router gateway (bootstraps .env)
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# --router: offload translation to the local 9router gateway. main.py doesn't
+# know this flag (strict argparse), so consume it here, set the backend env, and
+# bootstrap .env from the template on first use so ZT_ROUTER_KEY/MODEL are set.
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--router" ]]; then
+    export ZT_TRANSLATOR=router
+    if [[ ! -f .env && -f .env.example ]]; then
+      cp .env.example .env
+      echo "==> Created .env from .env.example — edit ZT_ROUTER_KEY if your gateway needs it."
+    fi
+  else
+    ARGS+=("$arg")
+  fi
+done
+# Re-set positional params to the filtered list (empty-array-safe on bash 3.2).
+set -- ${ARGS[@]+"${ARGS[@]}"}
 
 HOST_ARCH="$(uname -m)"
 

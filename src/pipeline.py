@@ -771,6 +771,15 @@ class TranslationPipeline:
             self._draining.clear()
         self._translate_thread.join(timeout=config.WORKER_SHUTDOWN_TIMEOUT)
 
+        # Release the translator's resources (Router's pooled HTTP session);
+        # NLLB/LLM have no close(), so guard with getattr.
+        close = getattr(self.translator, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                ev.log("translator_close_error", error=str(exc))
+
         if not flush_tail:
             # Ctrl+C best-effort: keep shutdown bounded, but audit and drain any
             # already-recognized text that is safe to process on this thread.
