@@ -95,7 +95,7 @@ $routerBase = if ($env:ZT_ROUTER_BASE_URL) { $env:ZT_ROUTER_BASE_URL } else { "h
 # --- Probe the gateway so failures are obvious up front -------------------
 $routerKey = if ($env:ZT_ROUTER_KEY) { $env:ZT_ROUTER_KEY } else { "sk_9router" }
 $probe = "import requests,sys; sys.exit(0 if requests.get('$routerBase/models', headers={'Authorization':'Bearer $routerKey'}, timeout=3).ok else 1)"
-python -c $probe 2>$null
+try { python -c $probe 2>$null } catch {}
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [warn] 9router not reachable at $routerBase - start it first, or the host falls back to scripted text." -ForegroundColor Red
 } else {
