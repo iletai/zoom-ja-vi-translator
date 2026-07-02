@@ -55,12 +55,7 @@ class TranslationPipeline:
         self.backend = backend
         self.cloud = backend != "local"
         self.stop_event = threading.Event()
-        # Unique ID per session so webhook log entries are groupable by meeting.
         self._session_id = str(uuid.uuid4())
-        # Teams thread anchor: message_id returned by the first POST; subsequent
-        # POSTs include it so the Flow can reply in-thread instead of posting new.
-        self._webhook_thread_id: str | None = None
-        self._webhook_thread_lock = threading.Lock()
 
         self._audio_queue: queue.Queue = queue.Queue(maxsize=config.CAPTURE_QUEUE_MAXSIZE)
         # Bounded but generously sized: recognized text is preserved via producer
@@ -634,55 +629,35 @@ class TranslationPipeline:
         proxy_url = os.environ.get("ZT_WEBHOOK_PROXY", "")
         proxies = {"https": proxy_url, "http": proxy_url} if proxy_url else {}
 
-        with self._webhook_thread_lock:
-            thread_id = self._webhook_thread_id
-
         payload = {
-            "session_id": self._session_id,
-            "seq": seq,
-            "thread_id": thread_id,
-            "card": {
-                "type": "AdaptiveCard",
-                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                "version": "1.4",
-                "body": [
-                    {
-                        "type": "TextBlock",
-                        "text": f"🎙️ [{seq}] {japanese}",
-                        "wrap": True,
-                        "size": "Small",
-                        "color": "Accent",
-                    },
-                    {
-                        "type": "TextBlock",
-                        "text": f"🇻🇳 {vietnamese}",
-                        "wrap": True,
-                        "size": "Default",
-                        "weight": "Bolder",
-                    },
-                ],
-            },
+            "type": "AdaptiveCard",
+            "version": "1.4",
+            "body": [
+                {
+                    "type": "TextBlock",
+                    "text": f"🎙️ [{seq}] {japanese}",
+                    "wrap": True,
+                    "size": "Small",
+                    "color": "Accent",
+                },
+                {
+                    "type": "TextBlock",
+                    "text": f"🇻🇳 {vietnamese}",
+                    "wrap": True,
+                    "size": "Default",
+                    "weight": "Bolder",
+                },
+            ],
         }
 
         def _post() -> None:
             try:
-                import json as _json
                 import requests as _req
                 s = _req.Session()
                 s.trust_env = not proxy_url  # False = ignore HTTPS_PROXY from Windows env
                 if proxy_url:
                     s.proxies = proxies
-                resp = s.post(url, json=payload, timeout=timeout)
-                if thread_id is None and resp.status_code == 200:
-                    try:
-                        mid = resp.json().get("message_id") or resp.json().get("messageId")
-                        if mid:
-                            with self._webhook_thread_lock:
-                                if self._webhook_thread_id is None:
-                                    self._webhook_thread_id = str(mid)
-                                    logger.info("Webhook thread anchored: %s", mid)
-                    except (_json.JSONDecodeError, AttributeError):
-                        pass
+                s.post(url, json=payload, timeout=timeout)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Webhook POST failed seq=%d: %s", seq, exc)
 
