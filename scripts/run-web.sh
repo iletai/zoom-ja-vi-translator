@@ -14,7 +14,7 @@
 #   ./run-web.sh                       # launch dashboard on http://localhost:8501
 #   ./run-web.sh --server.port 8600    # extra args pass through to streamlit
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 HOST_ARCH="$(uname -m)"
 

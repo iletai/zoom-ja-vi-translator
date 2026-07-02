@@ -12,7 +12,7 @@
 #   ./run-host.sh --port 8888     # extra args pass through to host_server.py
 #   ./run-host.sh --host 0.0.0.0  # expose on LAN (use with care)
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 PYTHON="python3"
 for VENV in .venv-arm64 .venv; do

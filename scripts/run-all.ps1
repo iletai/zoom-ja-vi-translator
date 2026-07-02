@@ -16,7 +16,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
+Set-Location -Path (Join-Path $PSScriptRoot "..")
 
 # ─── UTF-8 console ────────────────────────────────────────────────────────
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -71,8 +71,8 @@ if ($Nllb) {
     $backendName = "NLLB-600M"
 } else {
     $env:ZT_TRANSLATOR = "llm"
-    $model1p5b = Join-Path $PSScriptRoot "models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
-    $model3b = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+    $model1p5b = Join-Path $PSScriptRoot "..\models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+    $model3b = Join-Path $PSScriptRoot "..\models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 
     if (Test-Path $model1p5b) {
         $backendName = "Qwen2.5-1.5B"
@@ -97,7 +97,7 @@ $env:TRANSFORMERS_OFFLINE = "1"
 
 # ─── Session setup ────────────────────────────────────────────────────────
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logDir = Join-Path $PSScriptRoot "test_audio\evidence"
+$logDir = Join-Path $PSScriptRoot "..\test_audio\evidence"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $logFile = Join-Path $logDir "run_${timestamp}.jsonl"
 

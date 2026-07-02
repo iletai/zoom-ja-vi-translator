@@ -8,7 +8,7 @@
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
+Set-Location -Path (Join-Path $PSScriptRoot "..")
 
 try {
 
@@ -63,7 +63,7 @@ if (-not (Test-Path ".venv\.web_deps_installed")) {
 
 # ─── Log file ─────────────────────────────────────────────────────────────
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logDir = Join-Path $PSScriptRoot "test_audio\evidence"
+$logDir = Join-Path $PSScriptRoot "..\test_audio\evidence"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $logFile = Join-Path $logDir "run_${timestamp}.jsonl"
 

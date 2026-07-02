@@ -11,7 +11,7 @@
 #   ./run-web.ps1 --server.port 8600    # extra args pass through to streamlit
 
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
+Set-Location -Path (Join-Path $PSScriptRoot "..")
 
 # Enable UTF-8 console output for Japanese/Vietnamese characters.
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

@@ -15,7 +15,7 @@
 #   ./run.sh --streaming     # low-latency live captions (extra args pass through)
 #   ./run.sh --router        # translate via the 9router gateway (bootstraps .env)
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # --router: offload translation to the local 9router gateway. main.py doesn't
 # know this flag (strict argparse), so consume it here, set the backend env, and

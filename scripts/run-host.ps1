@@ -28,7 +28,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
+Set-Location -Path (Join-Path $PSScriptRoot "..")
 
 # --- UTF-8 console (Japanese / Vietnamese output) -------------------------
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

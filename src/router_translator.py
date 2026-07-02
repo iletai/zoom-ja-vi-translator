@@ -331,9 +331,13 @@ class RouterTranslator:
                 resp = self._session.post(self.url, json=body, timeout=self.timeout)
                 resp.raise_for_status()
                 return self._extract(resp.text)
+            except requests.Timeout as exc:
+                # Timeout means the gateway is busy/slow — retrying wastes another
+                # full timeout window with the same result. Fail fast instead.
+                logger.warning("Router timed out (attempt %d/2), giving up: %s", attempt, exc)
+                return ""
             except requests.RequestException as exc:
-                # Only network/timeout/HTTP errors retry; a malformed-but-200
-                # body is handled in _extract (returns "") and never reaches here.
+                # Connection errors (refused, reset) are worth one retry.
                 last_exc = exc
                 logger.warning("Router request failed (attempt %d/2): %s", attempt, exc)
         logger.error("Router translation gave up after 2 attempts: %s", last_exc)

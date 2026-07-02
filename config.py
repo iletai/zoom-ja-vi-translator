@@ -565,7 +565,7 @@ ROUTER_TEMPERATURE = float(os.environ.get("ZT_ROUTER_TEMPERATURE", "0.0"))
 ROUTER_MAX_TOKENS = int(os.environ.get("ZT_ROUTER_MAX_TOKENS", "180"))
 # Hard per-request deadline. Live captions must fail fast: a stalled segment is
 # better dropped (and the next one shown) than blocking the meeting for 20s.
-ROUTER_TIMEOUT_S = float(os.environ.get("ZT_ROUTER_TIMEOUT", "6"))
+ROUTER_TIMEOUT_S = float(os.environ.get("ZT_ROUTER_TIMEOUT", "12"))
 # Sentences of prior context fed to the model for coherent terminology across a
 # meeting (0 disables). Reuses the LLM backend's JA→VI system prompt.
 ROUTER_CONTEXT_SENTENCES = int(os.environ.get("ZT_ROUTER_CONTEXT", "3"))

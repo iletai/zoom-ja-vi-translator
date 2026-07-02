@@ -12,10 +12,13 @@ audio, runs streaming speech recognition, translates, and renders Vietnamese sub
 ```bash
 python3 main.py --list-devices      # enumerate audio input devices
 python3 main.py                      # run the translator (from project root)
-./run.sh                             # convenience launcher
+./scripts/run.sh                     # convenience launcher (macOS/Linux)
+./scripts/run-host.ps1               # web UI launcher (Windows, most common)
 ```
 
 Always run from the project root so relative imports under `src/` resolve.
+
+All launcher scripts (`run*.ps1`, `run*.sh`, `START-*.bat`) live in `scripts/`.
 
 ## Architecture
 
@@ -47,9 +50,9 @@ A browser UI and a 9router translation backend were added on top of the CLI pipe
 full picture. Key entry points:
 
 - **webui/host_server.py** — stdlib WebSocket host that serves `webui/rd_ui_v1.1.html`
-  and bridges it to the pipeline. Run via `run-host.ps1` (Windows) / `run-host.sh`.
+  and bridges it to the pipeline. Run via `scripts/run-host.ps1` (Windows) / `scripts/run-host.sh`.
 - **src/router_translator.py** — `RouterTranslator`, the `ZT_TRANSLATOR=router` backend.
-- **Windows launcher**: `run.ps1 -Router` runs the CLI with local ASR + 9router.
+- **Windows launcher**: `scripts/run.ps1 -Router` runs the CLI with local ASR + 9router.
 - Translation backends: `nllb` (default), `llm` (local Qwen), `router` (9router).
 - `.ps1` files must stay ASCII-only in string literals + keep a UTF-8 BOM (PowerShell 5.1
   mis-decodes BOM-less non-ASCII and breaks parsing).

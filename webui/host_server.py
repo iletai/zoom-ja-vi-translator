@@ -45,6 +45,13 @@ _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+# Load .env so ZT_WEBHOOK_URL and other settings are available even before
+# config.py is imported (demo mode never imports config until _RealEngine).
+try:
+    import config as _config  # noqa: F401 — side-effect: loads .env into os.environ
+except Exception:
+    pass  # best-effort; env vars set in the shell still work
+
 # Fallback device list when soundcard is unavailable (e.g. headless WSL). The UI
 # only needs {id, name}; ids are opaque strings it round-trips back on start.
 _DEMO_DEVICES = [
@@ -148,6 +155,51 @@ async def translate_ja_vi(text: str, fallback: str) -> str:
         return fallback
 
 
+def _fire_webhook(session_id: str, seq: int, japanese: str, vietnamese: str) -> None:
+    """POST one translated pair to the webhook URL configured in ZT_WEBHOOK_URL."""
+    url = os.environ.get("ZT_WEBHOOK_URL", "")
+    if not url:
+        return
+    payload = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [
+            {
+                "type": "TextBlock",
+                "text": f"🎙️ [{seq}] {japanese}",
+                "wrap": True,
+                "size": "Small",
+                "color": "Accent",
+            },
+            {
+                "type": "TextBlock",
+                "text": f"🇻🇳 {vietnamese}",
+                "wrap": True,
+                "size": "Default",
+                "weight": "Bolder",
+            },
+        ],
+    }
+
+    timeout = float(os.environ.get("ZT_WEBHOOK_TIMEOUT", "5"))
+    proxy_url = os.environ.get("ZT_WEBHOOK_PROXY", "")
+    proxies = {"https": proxy_url, "http": proxy_url} if proxy_url else {}
+
+    def _post() -> None:
+        try:
+            import requests as _req
+            s = _req.Session()
+            s.trust_env = not proxy_url  # ignore HTTPS_PROXY from Windows env
+            if proxy_url:
+                s.proxies = proxies
+            s.post(url, json=payload, timeout=timeout)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Webhook POST failed seq=%d: %s", seq, exc)
+
+    threading.Thread(target=_post, daemon=True).start()
+
+
 class _DemoEngine:
     """Streams a JA→VI subtitle feed: scripted Japanese, *live* translation.
 
@@ -162,6 +214,8 @@ class _DemoEngine:
         self._from = from_lang
         self._to = to_lang
         self._task: asyncio.Task | None = None
+        self._session_id = str(__import__("uuid").uuid4())
+        self._seq = 0
 
     def start(self) -> None:
         self._task = asyncio.ensure_future(self._run())
@@ -195,6 +249,9 @@ class _DemoEngine:
                 dst = await translate_ja_vi(src, item["fallback"])
                 latency_ms = int((time.time() - t0) * 1000)
                 await self._subtitle(src, dst, partial=False, segment_end=True, ts=_now_ms())
+                self._seq += 1
+                if dst:
+                    _fire_webhook(self._session_id, self._seq, src, dst)
 
                 await self._conn.send({
                     "type": "engine/status",

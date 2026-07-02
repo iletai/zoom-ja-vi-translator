@@ -12,8 +12,10 @@ bound end-to-end latency:
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import threading
+import uuid
 from time import monotonic
 
 import config
@@ -53,6 +55,12 @@ class TranslationPipeline:
         self.backend = backend
         self.cloud = backend != "local"
         self.stop_event = threading.Event()
+        # Unique ID per session so webhook log entries are groupable by meeting.
+        self._session_id = str(uuid.uuid4())
+        # Teams thread anchor: message_id returned by the first POST; subsequent
+        # POSTs include it so the Flow can reply in-thread instead of posting new.
+        self._webhook_thread_id: str | None = None
+        self._webhook_thread_lock = threading.Lock()
 
         self._audio_queue: queue.Queue = queue.Queue(maxsize=config.CAPTURE_QUEUE_MAXSIZE)
         # Bounded but generously sized: recognized text is preserved via producer
@@ -610,6 +618,75 @@ class TranslationPipeline:
                 ev.log("display", seq=seq, pre_shown=pre_shown, jp=japanese, vi=vietnamese)
             except Exception as exc:
                 ev.log("display_error", seq=seq, jp=japanese, vi=vietnamese, error=str(exc))
+            if vietnamese:
+                self._fire_webhook(seq, japanese, vietnamese)
+
+    def _fire_webhook(self, seq: int, japanese: str, vietnamese: str) -> None:
+        """POST one translated pair to the webhook (fire-and-forget).
+
+        Sends thread_id from the first response so the Flow can route subsequent
+        messages as replies in-thread instead of new posts.
+        """
+        url = os.environ.get("ZT_WEBHOOK_URL", "")
+        if not url:
+            return
+        timeout = float(os.environ.get("ZT_WEBHOOK_TIMEOUT", "12"))
+        proxy_url = os.environ.get("ZT_WEBHOOK_PROXY", "")
+        proxies = {"https": proxy_url, "http": proxy_url} if proxy_url else {}
+
+        with self._webhook_thread_lock:
+            thread_id = self._webhook_thread_id
+
+        payload = {
+            "session_id": self._session_id,
+            "seq": seq,
+            "thread_id": thread_id,
+            "card": {
+                "type": "AdaptiveCard",
+                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                "version": "1.4",
+                "body": [
+                    {
+                        "type": "TextBlock",
+                        "text": f"🎙️ [{seq}] {japanese}",
+                        "wrap": True,
+                        "size": "Small",
+                        "color": "Accent",
+                    },
+                    {
+                        "type": "TextBlock",
+                        "text": f"🇻🇳 {vietnamese}",
+                        "wrap": True,
+                        "size": "Default",
+                        "weight": "Bolder",
+                    },
+                ],
+            },
+        }
+
+        def _post() -> None:
+            try:
+                import json as _json
+                import requests as _req
+                s = _req.Session()
+                s.trust_env = not proxy_url  # False = ignore HTTPS_PROXY from Windows env
+                if proxy_url:
+                    s.proxies = proxies
+                resp = s.post(url, json=payload, timeout=timeout)
+                if thread_id is None and resp.status_code == 200:
+                    try:
+                        mid = resp.json().get("message_id") or resp.json().get("messageId")
+                        if mid:
+                            with self._webhook_thread_lock:
+                                if self._webhook_thread_id is None:
+                                    self._webhook_thread_id = str(mid)
+                                    logger.info("Webhook thread anchored: %s", mid)
+                    except (_json.JSONDecodeError, AttributeError):
+                        pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Webhook POST failed seq=%d: %s", seq, exc)
+
+        threading.Thread(target=_post, daemon=True).start()
 
     def _translate_batch_flattened(self, batch: list[tuple[int, str, bool]]) -> list[str]:
         """Translate every sentence across all items in one CTranslate2 batch.

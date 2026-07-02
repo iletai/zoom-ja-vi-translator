@@ -9,7 +9,7 @@
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
+Set-Location -Path (Join-Path $PSScriptRoot "..")
 
 try {
 
@@ -51,8 +51,8 @@ if (-not (Test-Path "models\reazonspeech-k2-v2")) {
     python scripts\download_models.py
 }
 
-$model1p5b = Join-Path $PSScriptRoot "models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
-$model3b = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+$model1p5b = Join-Path $PSScriptRoot "..\models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+$model3b = Join-Path $PSScriptRoot "..\models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 if (-not (Test-Path $model1p5b) -and -not (Test-Path $model3b)) {
     Write-Host "==> Downloading Qwen2.5-3B (~1.8 GB)..." -ForegroundColor Yellow
     python scripts\download_qwen_model.py --size 3b
@@ -76,7 +76,7 @@ if (-not (Test-Path ".venv\.web_deps_installed")) {
 
 # ─── Log file ─────────────────────────────────────────────────────────────
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logDir = Join-Path $PSScriptRoot "test_audio\evidence"
+$logDir = Join-Path $PSScriptRoot "..\test_audio\evidence"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $logFile = Join-Path $logDir "run_${timestamp}.jsonl"
 

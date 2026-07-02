@@ -23,7 +23,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
+Set-Location -Path (Join-Path $PSScriptRoot "..")
 
 # ─── Python interpreter ───────────────────────────────────────────────────
 $python = "python"
