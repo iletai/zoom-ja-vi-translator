@@ -74,6 +74,22 @@ DOMAIN_TERMS: dict[str, str] = {
     # Additional business terms lacking proper-noun entries
     "交渉履歴": "lịch sử đàm phán",
     "交渉開始": "bắt đầu đàm phán",
+    # ── Emergency activity statuses (from NeO-MATCH domain glossary) ──────
+    "覚知": "tiếp nhận tin báo",
+    "現着": "đến hiện trường",
+    "接触": "tiếp xúc bệnh nhân",
+    "車内収容": "đưa lên xe",
+    "現発": "rời hiện trường",
+    "病着": "đến bệnh viện",
+    "引揚": "rút về sau bàn giao",
+    "帰署": "về trụ sở",
+    # ── Patient / inquiry status ───────────────────────────────────────────
+    "受入可": "tiếp nhận được",
+    "受入不可": "không tiếp nhận",
+    "搬送完了": "hoàn tất vận chuyển",
+    "照会": "hỏi tiếp nhận",
+    "受入可否": "khả năng tiếp nhận",
+    "応需設定": "cài đặt năng lực tiếp nhận",
 }
 
 # ── Proper nouns (direct substitution, NOT hints) ─────────────────────────

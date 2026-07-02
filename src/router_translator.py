@@ -173,10 +173,10 @@ class RouterTranslator:
         sentences = split_japanese_sentences(text)
         if len(sentences) <= 1:
             return self._translate_one(sentences[0] if sentences else text)
-        # Multi-sentence: translate concurrently, then join in order. Context is
-        # not threaded between them (they were spoken together) to keep the
-        # fan-out race-free; see translate_many.
-        parts = self._translate_parallel(sentences)
+        # Multi-sentence: translate sequentially so each sentence's result enters
+        # the context window before the next one is translated — preserves
+        # consistency for proper nouns / topics that span sentences.
+        parts = [self._translate_one(s) for s in sentences]
         return " ".join(p for p in parts if p).strip()
 
     def translate_many(self, texts: list[str]) -> list[str]:
@@ -312,7 +312,10 @@ class RouterTranslator:
             with self._lock:
                 history = list(self._history)
             for src, dst in history:
-                messages.append({"role": "user", "content": f"<source_ja>{src}</source_ja>"})
+                # History stored as (raw_cleaned, translation). Apply same
+                # preprocess so the model sees consistent romanized/substituted
+                # format across both history turns and the current message.
+                messages.append({"role": "user", "content": f"<source_ja>{self._preprocess(src)}</source_ja>"})
                 messages.append({"role": "assistant", "content": dst})
         messages.append({"role": "user", "content": f"<source_ja>{text}</source_ja>"})
         return messages
