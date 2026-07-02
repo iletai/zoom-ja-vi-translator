@@ -161,9 +161,11 @@ class SentenceAggregator:
         remainder = self._buffer.strip()
         self._buffer = ""
         if remainder:
-            if self.is_dangling(remainder) and sentences:
+            if self.is_dangling(remainder) and sentences and sentences[-1][-1] not in self._HARD_FINALS:
                 # At shutdown do not send a low-content tail to NLLB by itself;
                 # attach it to the sentence it was trailing so no text is lost.
+                # Guard: don't append to a sentence ending with 。！？ — that
+                # produces broken Japanese (e.g. "完了しました。ので").
                 sentences[-1] += remainder
             else:
                 sentences.append(remainder)
@@ -200,7 +202,7 @@ class SentenceAggregator:
         not just exact short-fragment matches.
         """
         text = text.strip()
-        if not text or len(text) < 4:
+        if not text:
             return False
         for ending in self._CONNECTIVE_ENDINGS:
             if text.endswith(ending):

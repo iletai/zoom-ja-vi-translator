@@ -6,6 +6,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+ctranslate2 = pytest.importorskip("ctranslate2", reason="ctranslate2 not installed")
+
 import config  # noqa: E402
 from src.translator import NllbTranslator  # noqa: E402
 

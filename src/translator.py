@@ -14,6 +14,11 @@ from src.sentence_aggregator import split_japanese_sentences
 
 logger = logging.getLogger(__name__)
 
+# Sorted once at module load — _apply_glossary is @staticmethod called per segment
+_SORTED_NLLB_GLOSSARY: list[tuple[str, str]] = sorted(
+    config.NLLB_GLOSSARY.items(), key=lambda x: len(x[0]), reverse=True
+)
+
 # ─── Wrong-language detection for NLLB output validation ─────────────────
 # NLLB is a massive multilingual model that can occasionally "leak" into Thai,
 # Korean, or other scripts when the source is ambiguous or very short.
@@ -237,9 +242,7 @@ class NllbTranslator:
         Sorted longest-first to prevent partial matches (e.g. クロステナント
         before テナント).
         """
-        for term, replacement in sorted(
-            config.NLLB_GLOSSARY.items(), key=lambda x: len(x[0]), reverse=True
-        ):
+        for term, replacement in _SORTED_NLLB_GLOSSARY:
             if term in text:
                 text = text.replace(term, replacement)
         return text

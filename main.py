@@ -187,7 +187,7 @@ def _configure_file_logging(log_path: str | None) -> None:
         log_file = log_dir / f"session_{time.strftime('%Y%m%d_%H%M%S')}.log"
 
     # Resolve the configured log level (default: DEBUG)
-    level_name = getattr(config, "LOG_LEVEL", "DEBUG")
+    level_name = config.LOG_LEVEL
     file_level = getattr(logging, level_name, logging.DEBUG)
 
     # Configure root logger: capture everything
@@ -216,7 +216,7 @@ def _configure_file_logging(log_path: str | None) -> None:
     logging.info("Log file: %s", log_file)
     logging.info("Python: %s", sys.version)
     logging.info("Platform: %s", sys.platform)
-    logging.info("Translator backend: %s", getattr(config, "TRANSLATOR_BACKEND", "unknown"))
+    logging.info("Translator backend: %s", config.TRANSLATOR_BACKEND)
     logging.info("=" * 70)
 
 
@@ -258,7 +258,7 @@ def main() -> int:
         return 0
 
     _log_path = _configure_evidence_log(args, display)
-    _configure_file_logging(_log_path)
+    _configure_file_logging(str(_log_path) if _log_path is not None else None)
     from src import evidence_log
 
     try:

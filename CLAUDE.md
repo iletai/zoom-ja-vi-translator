@@ -26,7 +26,7 @@ Multi-threaded pipeline (`src/pipeline.py`) with three decoupled stages connecte
 **bounded queues**, keeping the UI responsive and bounding memory:
 
 ```
-audio_capture → VAD → streaming_asr → sentence_aggregator → cloud_translator → display
+audio_capture → VAD → asr → sentence_aggregator → translator → display
 ```
 
 ### Modules (`src/`)
@@ -38,7 +38,11 @@ audio_capture → VAD → streaming_asr → sentence_aggregator → cloud_transl
 - **sentence_aggregator.py** — assembles committed tokens into full sentences for translation.
 - **cloud_translator.py** — JA→VI translation via a cloud translation API.
 - **router_translator.py** — JA→VI via a local OpenAI-compatible gateway ("9router");
-  drop-in backend, selected with `ZT_TRANSLATOR=router`. See `docs/WEBUI_9ROUTER.md`.
+  drop-in backend, selected with `ZT_TRANSLATOR=router`. Sends sentences sequentially
+  when `ZT_ROUTER_CONTEXT > 0` (each sentence enters history before the next request),
+  parallel otherwise. Pure filler/back-channel utterances (はい, なるほど, etc.) are
+  short-circuited via an in-process map without a network round-trip.
+  See `docs/WEBUI_9ROUTER.md`.
 - **display.py** — renders the live Vietnamese subtitles.
 - **pipeline.py** — orchestrates the stages and the bounded queues between them.
 - **main.py** — CLI entry point (`--list-devices`, device selection, startup).

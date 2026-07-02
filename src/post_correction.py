@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +72,16 @@ PHRASE_CORRECTIONS: dict[str, str] = {
     "イーミス": "EMIS",              # emergency medical info system
 }
 
+# Sorted longest-first once at import time — post_correct() is on the hot path.
+# ponytail: module-level sort; rebuild if PHRASE_CORRECTIONS grows past ~200 entries and profiling shows overhead
+_SORTED_CORRECTIONS: list[tuple[str, str]] = sorted(
+    PHRASE_CORRECTIONS.items(), key=lambda kv: -len(kv[0])
+)
+assert all(
+    len(_SORTED_CORRECTIONS[i][0]) >= len(_SORTED_CORRECTIONS[i + 1][0])
+    for i in range(len(_SORTED_CORRECTIONS) - 1)
+), "BUG: _SORTED_CORRECTIONS is not longest-first"
+
 # Context-aware corrections: only apply when surrounding text matches a pattern
 CONTEXT_CORRECTIONS: list[tuple[re.Pattern, str, str]] = [
     # スケース → ユースケース only when NOT preceded by ユー
@@ -97,8 +106,8 @@ def post_correct(text: str) -> str:
 
     original = text
 
-    # Phase 1: exact phrase replacements (longest-first via dict ordering)
-    for wrong, right in PHRASE_CORRECTIONS.items():
+    # Phase 1: exact phrase replacements (longest-first, pre-sorted at import)
+    for wrong, right in _SORTED_CORRECTIONS:
         if wrong in text:
             text = text.replace(wrong, right)
 
@@ -111,7 +120,3 @@ def post_correct(text: str) -> str:
 
     return text
 
-
-def post_correct_batch(texts: list[str]) -> list[str]:
-    """Apply corrections to a batch of texts."""
-    return [post_correct(t) for t in texts]

@@ -6,7 +6,6 @@ import logging
 import pathlib
 import re
 import threading
-import unicodedata
 from collections import deque
 from typing import Any
 
@@ -14,6 +13,12 @@ import config
 from src.domain_data import DOMAIN_TERMS, PROPER_NOUNS, KATAKANA_TERMS as _KATAKANA_SOURCE
 from src.japanese_names import SURNAME_MAP, SURNAME_SET, KATAKANA_NAMES
 from src.sentence_aggregator import split_japanese_sentences
+
+# Module-level compiled patterns (avoids re-compile on every segment call)
+_ALPHA_TOKENS_RE = re.compile(r"[A-Za-z]+")
+_LEADING_EN_WORD_RE = re.compile(r"^([A-Za-z]+)(?:,\s*|\s+)(.+)$")
+_DOUBLE_SPACE_RE = re.compile(r" {2,}")
+_KANJI_HINT_RE = re.compile(r'[一-鿿぀-ゟ゠-ヿ]+\(([^()]+)\)')
 
 # Multi-character surnames: safe for substring matching.
 # Single-character surnames (森, 林, 関) excluded to avoid false positives
@@ -29,20 +34,7 @@ _SORTED_KATAKANA_NAMES: list[tuple[str, str]] = sorted(
     KATAKANA_NAMES.items(), key=lambda x: len(x[0]), reverse=True,
 )
 
-try:
-    from src.translator import join_translations
-except Exception:  # pragma: no cover - fallback for partial environments
-    def join_translations(sources, translations):
-        """Positionally join VI ``translations`` for their JP ``sources``."""
-        parts: list[str] = []
-        dropped: list[tuple[int, str]] = []
-        for idx, (src, vi) in enumerate(zip(sources, translations)):
-            if vi and vi.strip():
-                parts.append(vi.strip())
-            elif src and src.strip():
-                parts.append("(...)")
-                dropped.append((idx, src))
-        return " ".join(parts), dropped
+from src.translator import join_translations
 
 
 logger = logging.getLogger(__name__)
@@ -229,6 +221,9 @@ class LlmTranslator:
         self._sorted_katakana_terms: list[tuple[str, str]] = sorted(
             self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0]),
         )
+        self._sorted_proper_nouns: list[tuple[str, str]] = sorted(
+            self._PROPER_NOUN_MAP.items(), key=lambda x: -len(x[0]),
+        )
 
         # NLLB fast-path translator for simple sentences (skip when LLM backend selected)
         self._fast_translator = (
@@ -360,8 +355,13 @@ digit ::= [0-9]
         # with common kanji compounds like 関係/関数.
         if any(name in text for name in _LONG_SURNAMES):
             return "llm"
+        # Domain terms need glossary-guided LLM translation even when short.
+        # ponytail: O(N_terms) scan, ~90 entries, runs once per sentence
+        if any(k in text for k in self._BUSINESS_GLOSSARY):
+            return "llm"
         # Very short fragments (fillers, simple nouns) → NLLB is fine
-        if n <= 30 and config.TRANSLATOR_BACKEND == "nllb":
+        # "auto" backend uses this method to decide; "nllb" always routes here anyway.
+        if n <= 30 and config.TRANSLATOR_BACKEND in ("nllb", "auto"):
             return "nllb"
         # Longer text or anything ambiguous → LLM for context-aware quality
         return "llm"
@@ -475,23 +475,15 @@ digit ::= [0-9]
         "問題ないです": "Không có vấn đề gì",
     }
 
-    # Keigo simplification: verbose honorific → plain form (pre-processing).
+    # Keigo simplification: only grammatical-equivalence rewrites that don't
+    # alter politeness register or request semantics.  Content-bearing honorific
+    # forms (させていただく, おっしゃる, いらっしゃる, 存じます, etc.) are kept
+    # so the LLM can render them with appropriate Vietnamese politeness markers.
+    # ponytail: removed 11 entries that were stripping politeness signal the LLM needs
     _KEIGO_SIMPLIFY = [
-        ("させていただきます", "します"),
-        ("させていただく", "する"),
-        ("させていただいて", "して"),
-        ("させていただければ", "すれば"),
-        ("いただけますでしょうか", "もらえますか"),
-        ("いただけますか", "もらえますか"),
-        ("いただきたい", "ほしい"),
-        ("でございます", "です"),
-        ("申し上げます", "言います"),
-        ("おっしゃる", "言う"),
-        ("いらっしゃる", "いる"),
-        ("ございます", "あります"),
-        ("存じます", "思います"),
-        ("いたします", "します"),
-        ("いたしました", "しました"),
+        ("でございます", "です"),       # copula equivalence — safe
+        ("いたします", "します"),        # humble action ending — safe
+        ("いたしました", "しました"),    # humble action ending — safe
     ]
 
     # All three term maps built from src/domain_data — single source of truth.
@@ -530,16 +522,17 @@ digit ::= [0-9]
         "unfortunately", "however", "but", "well", "so", "yes", "no",
         "okay", "actually", "basically", "honestly", "also", "and",
     }
+    # Only strip hallucinated wish/desire forms — NOT "Ước tính"/"Ước chừng" which
+    # are valid Vietnamese for 見積もり/約/おおよそ and should pass through unchanged.
     _UOC_BIAS_PREFIXES = (
         "Ước mơ là ",
         "Ước mơ ",
         "Ước mong là ",
         "Ước mong ",
         "Ước gì ",
-        "Ước tính ",
-        "Ước chừng ",
     )
-    _LITERAL_UOC_SOURCE_HINTS = ("夢", "ゆめ", "願望", "願う", "願って", "祈り", "祈る")
+    _LITERAL_UOC_SOURCE_HINTS = ("夢", "ゆめ", "願望", "願う", "願って", "祈り", "祈る",
+                                  "見積", "推計", "算出", "おおよそ", "約", "概算")
 
     def _translate_one(self, text: str, update_context: bool = True) -> str:
         cleaned = text.strip() if text else ""
@@ -601,17 +594,11 @@ digit ::= [0-9]
             processed = processed.replace(keigo, plain)
 
         # Pre-process: replace day-of-week kanji with correct Vietnamese (deterministic)
-        dow_map = getattr(self, "_sorted_jp_dow", None)
-        if dow_map is None:
-            dow_map = sorted(self._JP_DOW_MAP.items(), key=lambda x: -len(x[0]))
-        for jp_day, vi_day in dow_map:
+        for jp_day, vi_day in self._sorted_jp_dow:
             processed = processed.replace(jp_day, vi_day)
 
         # Pre-process: replace known katakana IT terms with equivalents. Longest first.
-        kt_map = getattr(self, "_sorted_katakana_terms", None)
-        if kt_map is None:
-            kt_map = sorted(self._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0]))
-        for ja_term, en_term in kt_map:
+        for ja_term, en_term in self._sorted_katakana_terms:
             processed = processed.replace(ja_term, en_term)
 
         # Pre-process common misrecognized patterns
@@ -637,10 +624,7 @@ digit ::= [0-9]
         # fully replaced, preventing the overlap bug (e.g. 消防 in PROPER_NOUNS
         # replaces 消防→Cứu hỏa before glossary tries to add (cứu hỏa) hint).
         # Iterate longest-first to avoid substring corruption.
-        pn_map = getattr(self, "_sorted_proper_nouns", None)
-        if pn_map is None:
-            pn_map = sorted(self._PROPER_NOUN_MAP.items(), key=lambda x: -len(x[0]))
-        for noun, replacement in pn_map:
+        for noun, replacement in self._sorted_proper_nouns:
             processed = processed.replace(noun, replacement)
 
         # Phase 2 — Inject Vietnamese hints for kanji business terms NOT already
@@ -798,74 +782,6 @@ digit ::= [0-9]
         parts.append("<|im_start|>assistant\nVI: ")
         return "".join(parts)
 
-    def _build_messages(self, text: str) -> list[dict[str, str]]:
-        """Deprecated compatibility helper retained for tests and callers."""
-        messages = [{"role": "system", "content": self.system_prompt}]
-        few_shots = getattr(self, "_FEW_SHOT_EXAMPLES", ())
-
-        max_output_tokens = min(self.max_tokens, max(50, len(text) * 3))
-        token_budget = self.n_ctx - max_output_tokens
-        used_tokens = len(self.system_prompt) // 3 + 10
-
-        for user_ex, asst_ex in few_shots:
-            cost = (len(user_ex) + len(asst_ex)) // 3 + 12
-            if used_tokens + cost > token_budget - 80:
-                break
-            messages.append({"role": "user", "content": user_ex})
-            messages.append({"role": "assistant", "content": asst_ex})
-            used_tokens += cost
-
-        prompt_context_sentences = min(
-            getattr(self, "context_sentences", 0),
-            getattr(self, "_MAX_PROMPT_CONTEXT_SENTENCES", 1),
-        )
-        if self._keep_context and self._history and len(text) > 4 and prompt_context_sentences > 0:
-            recent = list(self._history)[-prompt_context_sentences:]
-            for jp, vi in recent:
-                part_cost = (len(jp) + len(vi)) // 3 + 12
-                if used_tokens + part_cost > token_budget - 40:
-                    break
-                messages.append({"role": "user", "content": f"JA: {jp}"})
-                messages.append({"role": "assistant", "content": f"VI: {vi}"})
-                used_tokens += part_cost
-
-        messages.append({"role": "user", "content": f"JA: {text}"})
-        messages.append({"role": "assistant", "content": "VI:"})
-        return messages
-
-    @staticmethod
-    def _extract_translation(response: Any) -> str:
-        if isinstance(response, dict):
-            choices = response.get("choices") or []
-        else:
-            choices = getattr(response, "choices", []) or []
-        if not choices:
-            return ""
-
-        choice = choices[0]
-        if isinstance(choice, dict):
-            message = choice.get("message") or {}
-            content = message.get("content")
-            if content is None:
-                content = choice.get("text")
-        else:
-            message = getattr(choice, "message", None)
-            content = getattr(message, "content", None) if message is not None else None
-            if content is None:
-                content = getattr(choice, "text", None)
-
-        if isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if isinstance(item, dict):
-                    piece = item.get("text") or item.get("content") or ""
-                else:
-                    piece = getattr(item, "text", None) or getattr(item, "content", "")
-                if piece:
-                    parts.append(str(piece))
-            return "".join(parts)
-        return str(content or "")
-
     # Patterns that indicate LLM genuinely refused to translate (hard refusals)
     _HARD_REFUSAL_PATTERNS = (
         "tôi sẽ không dịch",
@@ -997,7 +913,7 @@ digit ::= [0-9]
 
         english_tokens: list[str] = []
         for word in ascii_words:
-            english_tokens.extend(token.lower() for token in re.findall(r"[A-Za-z]+", word))
+            english_tokens.extend(token.lower() for token in _ALPHA_TOKENS_RE.findall(word))
         english_hits = sum(
             1
             for token in english_tokens
@@ -1034,7 +950,7 @@ digit ::= [0-9]
                     if rest and LlmTranslator._VI_DIACRITICS_RE.search(rest):
                         return rest
 
-        match = re.match(r"^([A-Za-z]+)(?:,\s*|\s+)(.+)$", text)
+        match = _LEADING_EN_WORD_RE.match(text)
         if not match:
             return text
 
@@ -1099,11 +1015,7 @@ digit ::= [0-9]
         cleaned = text.strip()
         # Strip business glossary hint artifacts: e.g. 確認(xác nhận) → xác nhận
         # Pattern: CJK/kana char(s) immediately followed by Vietnamese in parentheses
-        cleaned = re.sub(
-            r'[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF]+\(([^()]+)\)',
-            r'\1',
-            cleaned,
-        ).strip()
+        cleaned = _KANJI_HINT_RE.sub(r'\1', cleaned).strip()
         prefixes = ("VI:", "Tiếng Việt:", "Bản dịch:", "Vietnamese:", "Dịch sang tiếng Việt:")
         for prefix in prefixes:
             if cleaned.lower().startswith(prefix.lower()):
@@ -1175,7 +1087,7 @@ digit ::= [0-9]
             cleaned = cleaned.translate(LlmTranslator._CJK_NUMERAL_MAP)
             stripped = LlmTranslator._CJK_RE.sub("", cleaned).strip()
             # Collapse multiple spaces left by removal
-            stripped = re.sub(r" {2,}", " ", stripped)
+            stripped = _DOUBLE_SPACE_RE.sub(" ", stripped)
             # Accept if stripped result has Vietnamese diacritics (proof it's real VI)
             has_vi_diacritics = bool(LlmTranslator._VI_DIACRITICS_RE.search(stripped))
             # If removing kanji leaves useful text, use the stripped version

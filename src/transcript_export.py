@@ -137,6 +137,15 @@ def build_lines(events: Iterable[dict[str, Any]]) -> list[TranscriptLine]:
     return lines
 
 
+def _median(xs: list[float]) -> float:
+    if not xs:
+        return 0.0
+    s = sorted(xs)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
 def summarize(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
     """Compute headline stats for a run: counts, reason split, loss, latency."""
     events = list(events)
@@ -154,14 +163,6 @@ def summarize(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
             latencies.append(float(e["latency_ms"]))
         elif ev in _LOSS_EVENTS:
             loss[ev] = loss.get(ev, 0) + 1
-
-    def _median(xs: list[float]) -> float:
-        if not xs:
-            return 0.0
-        s = sorted(xs)
-        n = len(s)
-        mid = n // 2
-        return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
     n_disp = sum(1 for e in events if e.get("event") == "display")
     return {

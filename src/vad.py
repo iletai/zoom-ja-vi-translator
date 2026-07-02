@@ -1,15 +1,12 @@
 """Voice activity based utterance segmentation for real-time audio streams."""
 from __future__ import annotations
 
-import logging
 from collections import deque
 from typing import Optional
 
 import numpy as np
 
 import config
-
-logger = logging.getLogger(__name__)
 
 # Minimum silence run used as a safe min-cut boundary at max utterance length.
 VAD_MINCUT_SILENCE_MS = 90
@@ -81,12 +78,14 @@ class VadSegmenter:
         complete = audio[:full_sample_count]
         self._leftover = audio[full_sample_count:].copy()
 
+        # ponytail: batch-convert the whole block to PCM16 once; slice bytes per frame
+        pcm16_all = (np.clip(complete, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+        bytes_per_frame = self.frame_samples * 2  # 2 bytes per int16 sample
         frames: list[tuple[np.ndarray, bytes]] = []
         for start in range(0, full_sample_count, self.frame_samples):
-            frame = complete[start : start + self.frame_samples].copy()
-            # Clip to the expected float range before scaling to signed PCM16.
-            pcm16 = (np.clip(frame, -1.0, 1.0) * 32767.0).astype("<i2")
-            frames.append((frame, pcm16.tobytes()))
+            frame = complete[start : start + self.frame_samples]  # ponytail: view, not copy; _start_or_append copies via list append
+            b_start = (start // self.frame_samples) * bytes_per_frame
+            frames.append((frame, pcm16_all[b_start : b_start + bytes_per_frame]))
         return frames
 
     def push(self, audio_float32: np.ndarray) -> list[np.ndarray]:
@@ -236,7 +235,7 @@ class VadSegmenter:
         self._utterance_voiced = list(voiced_flags)
         self._utterance_rms = list(rms_values)
         self._current_utterance_ms = len(frames) * self.frame_ms
-        self._current_voiced_ms = sum(1 for voiced in voiced_flags if voiced) * self.frame_ms
+        self._current_voiced_ms = voiced_flags.count(True) * self.frame_ms
         trailing_silence = 0
         for voiced in reversed(voiced_flags):
             if voiced:
@@ -247,10 +246,11 @@ class VadSegmenter:
 
     @staticmethod
     def _frame_rms(frame: np.ndarray) -> float:
-        arr = np.asarray(frame, dtype=np.float64)
+        arr = np.asarray(frame, dtype=np.float32)
         if arr.size == 0:
             return 0.0
-        return float(np.sqrt(np.mean(arr ** 2)))
+        # ponytail: dot avoids a temp array for arr**2 and stays float32
+        return float(np.sqrt(np.dot(arr, arr) / arr.size))
 
     def _reset_utterance(self) -> None:
         self._utterance_frames = []

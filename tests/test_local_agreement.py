@@ -69,6 +69,25 @@ def test_reset_clears_state() -> None:
     assert buf.update("回答") == ("", "回答")
 
 
+def test_n3_revision_resets_agreement() -> None:
+    # n=3: window is always the last 3 hypotheses.
+    # hyp1="東京は", hyp2="東京は晴れ", hyp3="東京は雨が" → lcp of all three = "東京は".
+    # Even hyp4="東京は雨が降って" still has "東京は晴れ" in the window, so lcp stays "東京は".
+    # Only when three consecutive hyps all start with "東京は雨が" does committed advance.
+    buf = LocalAgreementBuffer(n=3)
+    assert buf.update("東京は") == ("", "東京は")
+    assert buf.update("東京は晴れ") == ("", "東京は晴れ")
+    # Window: ["東京は", "東京は晴れ", "東京は雨が"] → lcp = "東京は" commits
+    committed, _ = buf.update("東京は雨が")
+    assert committed == "東京は"
+    # Window: ["東京は晴れ", "東京は雨が", "東京は雨が降って"] → lcp still "東京は"
+    committed2, _ = buf.update("東京は雨が降って")
+    assert committed2 == "東京は"
+    # Window: ["東京は雨が", "東京は雨が降って", "東京は雨が降っています"] → lcp = "東京は雨が"
+    committed3, _ = buf.update("東京は雨が降っています")
+    assert committed3.startswith("東京は雨が")
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

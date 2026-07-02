@@ -98,8 +98,8 @@ if ($Router) {
     # Default: LLM mode (better quality for IT meetings)
     $env:ZT_TRANSLATOR = "llm"
 
-    $model1p5b = Join-Path $PSScriptRoot "models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
-    $model3b = Join-Path $PSScriptRoot "models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+    $model1p5b = Join-Path $PSScriptRoot "..\models\qwen2.5-1.5b-instruct\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+    $model3b = Join-Path $PSScriptRoot "..\models\qwen2.5-3b-instruct\Qwen2.5-3B-Instruct-Q4_K_M.gguf"
 
     if (Test-Path $model1p5b) {
         $backendName = "Qwen2.5-1.5B (context-aware, IT-optimized)"

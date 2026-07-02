@@ -75,6 +75,13 @@ def _make_translator(response_text: str = "Bản dịch thử") -> tuple[LlmTran
     translator.frequency_penalty = 0.1
     translator.max_tokens = 150
     translator.n_ctx = 768
+    # Lookup tables built in __init__ (helper bypasses __init__ via __new__).
+    translator._sorted_jp_dow = sorted(
+        LlmTranslator._JP_DOW_MAP.items(), key=lambda x: -len(x[0]))
+    translator._sorted_katakana_terms = sorted(
+        LlmTranslator._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0]))
+    translator._sorted_proper_nouns = sorted(
+        LlmTranslator._PROPER_NOUN_MAP.items(), key=lambda x: -len(x[0]))
     dummy_llm = _DummyLlm(response_text=response_text)
     translator.llm = dummy_llm
     return translator, dummy_llm

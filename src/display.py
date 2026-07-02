@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import ctypes
-import ctypes.wintypes
 import logging
 import shutil
 import sys
@@ -30,30 +29,30 @@ def _color_enabled() -> bool:
 # the bottom of the buffer but the viewport stays put. This helper forces
 # the viewport to follow the cursor so the latest subtitle is always visible.
 
-_STD_OUTPUT_HANDLE = -11
+if sys.platform == "win32":
+    import ctypes.wintypes
 
+    _STD_OUTPUT_HANDLE = -11
 
-class _COORD(ctypes.Structure):
-    _fields_ = [("X", ctypes.wintypes.SHORT), ("Y", ctypes.wintypes.SHORT)]
+    class _COORD(ctypes.Structure):
+        _fields_ = [("X", ctypes.wintypes.SHORT), ("Y", ctypes.wintypes.SHORT)]
 
+    class _SMALL_RECT(ctypes.Structure):
+        _fields_ = [
+            ("Left", ctypes.wintypes.SHORT),
+            ("Top", ctypes.wintypes.SHORT),
+            ("Right", ctypes.wintypes.SHORT),
+            ("Bottom", ctypes.wintypes.SHORT),
+        ]
 
-class _SMALL_RECT(ctypes.Structure):
-    _fields_ = [
-        ("Left", ctypes.wintypes.SHORT),
-        ("Top", ctypes.wintypes.SHORT),
-        ("Right", ctypes.wintypes.SHORT),
-        ("Bottom", ctypes.wintypes.SHORT),
-    ]
-
-
-class _CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", _COORD),
-        ("dwCursorPosition", _COORD),
-        ("wAttributes", ctypes.wintypes.WORD),
-        ("srWindow", _SMALL_RECT),
-        ("dwMaximumWindowSize", _COORD),
-    ]
+    class _CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", _COORD),
+            ("dwCursorPosition", _COORD),
+            ("wAttributes", ctypes.wintypes.WORD),
+            ("srWindow", _SMALL_RECT),
+            ("dwMaximumWindowSize", _COORD),
+        ]
 
 
 def _scroll_to_bottom() -> None:
@@ -98,6 +97,12 @@ class SubtitleDisplay:
         # paired target printed. Lets show_target keep the JP/VI pair together
         # even when batching prints several sources before the first translation.
         self._last_source_seq: int | None = None
+        # Terminal width cached at startup — get_terminal_size() is called on
+        # every ASR-token tick in streaming mode, syscall overhead adds up.
+        self._cols: int = shutil.get_terminal_size((80, 24)).columns
+        # Partial-line budget is fixed (prefix + cols are constant); compute once
+        # instead of re-measuring the prefix on every streaming ASR tick.
+        self._partial_avail: int = max(0, self._cols - self._display_width("  JP… ") - 1)
 
     def _maybe_scroll(self) -> None:
         """Scroll terminal viewport to latest output if auto-scroll is enabled."""
@@ -250,9 +255,7 @@ class SubtitleDisplay:
         # produces control-character junk; skip partials and rely on finals.
         if not self._isatty:
             return
-        prefix = "  JP… "
-        cols = shutil.get_terminal_size((80, 24)).columns
-        avail = max(0, cols - self._display_width(prefix) - 1)  # spare column avoids wrap
+        avail = self._partial_avail  # spare column avoids wrap; precomputed at init
         jp_line = self._partial_line(committed, tail, avail)
         with self._lock:
             # \r returns to column 0; \033[K clears to end of line.

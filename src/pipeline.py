@@ -16,6 +16,7 @@ import os
 import queue
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from time import monotonic
 
 import config
@@ -93,6 +94,12 @@ class TranslationPipeline:
         # even after stop_event is set (so drained segments are never abandoned).
         self._draining = threading.Event()
         self.cloud_translator = None
+        # ponytail: 2 workers — webhook is fire-and-forget HTTP; >2 concurrent posts are rare
+        self._webhook_pool = (
+            ThreadPoolExecutor(max_workers=2, thread_name_prefix="webhook")
+            if os.environ.get("ZT_WEBHOOK_URL")
+            else None
+        )
 
         if self.cloud:
             self.display.info(f"Connecting to cloud backend ({backend})...")
@@ -198,7 +205,7 @@ class TranslationPipeline:
             except Exception as exc:  # keep forwarding audio on a single bad block
                 self.display.info(f"[Cloud error] {exc}")
 
-    def _on_cloud_fatal(self, message: str) -> None:
+    def _on_cloud_fatal(self, _message: str) -> None:
         """Stop the pipeline when the cloud backend reports a fatal error.
 
         Called from the Azure SDK callback thread, so it must not join threads
@@ -445,8 +452,7 @@ class TranslationPipeline:
             # Give incomplete fragments (ending in connective particles) extra
             # buffer time — the continuation may arrive in the next VAD segment.
             if (
-                not force
-                and idle_sec <= config.OFFLINE_SENTENCE_MAX_WAIT_SEC * 2
+                idle_sec <= config.OFFLINE_SENTENCE_MAX_WAIT_SEC * 2
                 and self._offline_aggregator.ends_with_connective(pending)
             ):
                 return
@@ -473,8 +479,8 @@ class TranslationPipeline:
                    n_chars=len(pending), reason=reason)
 
     def _segment_queue_pending_count(self) -> int:
-        with self._segment_queue.mutex:
-            return sum(1 for item in self._segment_queue.queue if item is not _SEGMENT_SENTINEL)
+        # ponytail: qsize() is O(1) and lock-free; sentinel inflates by at most 1 — fine for shutdown logging
+        return self._segment_queue.qsize()
 
     def _next_seq(self) -> int:
         with self._seq_lock:
@@ -622,6 +628,8 @@ class TranslationPipeline:
         Sends thread_id from the first response so the Flow can route subsequent
         messages as replies in-thread instead of new posts.
         """
+        if self._webhook_pool is None:
+            return
         url = os.environ.get("ZT_WEBHOOK_URL", "")
         if not url:
             return
@@ -661,7 +669,7 @@ class TranslationPipeline:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Webhook POST failed seq=%d: %s", seq, exc)
 
-        threading.Thread(target=_post, daemon=True).start()
+        self._webhook_pool.submit(_post)
 
     def _translate_batch_flattened(self, batch: list[tuple[int, str, bool]]) -> list[str]:
         """Translate every sentence across all items in one CTranslate2 batch.
@@ -676,16 +684,23 @@ class TranslationPipeline:
         if not flat:
             return ["" for _ in batch]
         flat_vi = self.translator.translate_many(flat)
+        # ponytail: translate_many shouldn't return fewer items, but if it does
+        # a short slice shifts every subsequent item's alignment silently.
+        if len(flat_vi) < len(flat):
+            ev.log("translate_many_short", got=len(flat_vi), expected=len(flat))
+            flat_vi = flat_vi + [""] * (len(flat) - len(flat_vi))
 
         out: list[str] = []
         cursor = 0
-        for (seq, _jp, _pre), sentences in zip(batch, per_item_sentences):
+        for item, sentences in zip(batch, per_item_sentences):
             count = len(sentences)
             joined, dropped = join_translations(
                 sentences, flat_vi[cursor : cursor + count]
             )
-            for idx, src in dropped:
-                ev.log("empty_translation", seq=seq, sentence_index=idx, jp=src)
+            if dropped:
+                seq = item[0]
+                for idx, src in dropped:
+                    ev.log("empty_translation", seq=seq, sentence_index=idx, jp=src)
             out.append(joined.strip())
             cursor += count
         return out
@@ -799,6 +814,8 @@ class TranslationPipeline:
             self._capture.join(timeout=2.0)
             self._asr_thread.join(timeout=2.0)
             self.cloud_translator.stop()
+            if self._webhook_pool is not None:
+                self._webhook_pool.shutdown(wait=False)
             return
 
         # Join workers first so the non-thread-safe segmenter/ASR/translator are
@@ -822,6 +839,9 @@ class TranslationPipeline:
             # Re-decode is done producing: let the translate worker exit.
             self._draining.clear()
         self._translate_thread.join(timeout=config.WORKER_SHUTDOWN_TIMEOUT)
+
+        if self._webhook_pool is not None:
+            self._webhook_pool.shutdown(wait=False)
 
         # Release the translator's resources (Router's pooled HTTP session);
         # NLLB/LLM have no close(), so guard with getattr.

@@ -24,7 +24,7 @@ class JapaneseASR:
     def __init__(self) -> None:
         model_files = self._find_model_files(Path(config.ASR_MODEL_DIR))
 
-        recognizer_kwargs = dict(
+        recognizer_kwargs: dict[str, object] = dict(
             encoder=str(model_files["encoder"]),
             decoder=str(model_files["decoder"]),
             joiner=str(model_files["joiner"]),
@@ -68,7 +68,9 @@ class JapaneseASR:
             return ""
 
         duration_s = audio.size / self.SAMPLE_RATE
-        is_silence = bool(np.max(np.abs(audio)) <= self.SILENCE_THRESHOLD)
+        # Peak absolute amplitude without allocating an abs() temp of the whole
+        # waveform: |x|max == max(max, -min) for real samples.
+        is_silence = bool(max(audio.max(), -audio.min()) <= self.SILENCE_THRESHOLD)
         # Normalize the whole utterance to a consistent loudness before decoding
         # (helps the recognizer's features; no-op when disabled or on silence).
         if not is_silence:

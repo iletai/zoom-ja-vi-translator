@@ -71,9 +71,6 @@ DOMAIN_TERMS: dict[str, str] = {
     "救助活動": "hoạt động cứu hộ",
     "消火": "chữa cháy",
     "消火活動": "hoạt động chữa cháy",
-    # Additional business terms lacking proper-noun entries
-    "交渉履歴": "lịch sử đàm phán",
-    "交渉開始": "bắt đầu đàm phán",
     # ── Emergency activity statuses (from NeO-MATCH domain glossary) ──────
     "覚知": "tiếp nhận tin báo",
     "現着": "đến hiện trường",
@@ -123,6 +120,9 @@ PROPER_NOUNS: dict[str, str] = {
     "消防団": "Đội Cứu hỏa",
     "消防署": "Trạm Cứu hỏa",
     "消防": "Cứu hỏa",
+    "救急隊員": "Nhân viên cấp cứu",
+    "医療機関スタッフ": "Nhân viên cơ sở y tế",
+    "指令センター": "Trung tâm chỉ huy",
     "救急隊": "Đội Cấp cứu",
     "救急車": "Xe Cấp cứu",
     "警察": "Cảnh sát",
@@ -138,6 +138,7 @@ PROPER_NOUNS: dict[str, str] = {
     # — the PROPER_NOUNS version wins because it's applied FIRST as direct
     # substitution; see _translate_one  proper-nouns-before-glossary order)
     "傷病者": "Nạn nhân",
+    "搬送先": "Nơi tiếp nhận",
     "搬送者": "Người vận chuyển",
     "搬送元": "Nơi xuất phát vận chuyển",
     "搬送決定": "Quyết định vận chuyển",
@@ -151,7 +152,6 @@ PROPER_NOUNS: dict[str, str] = {
     "交渉開始": "Bắt đầu đàm phán",
     "現場到着": "Đến hiện trường",
     "災害時": "Khi có thảm họa",
-    "バイタル": "Vital signs",
     "トリアージ": "Triage",
     "トリアージタグ": "Triage tag",
     "ホットゾーン": "Hot zone",
@@ -198,8 +198,8 @@ KATAKANA_TERMS: dict[str, str] = {
     "イーシーツー": "EC2",
     "エスキューエス": "SQS",
     "テクノロジー": "Technology",
-    "トークイベント": "sự kiện thảo luận",
-    "トークイーブメント": "sự kiện thảo luận",
+    "トークイベント": "talk event",
+    "トークイーブメント": "talk event",
     "データベース": "database",
     "パイプライン": "pipeline",
     "マイグレーション": "migration",
@@ -208,7 +208,7 @@ KATAKANA_TERMS: dict[str, str] = {
     "オンプレミス": "on-premises",
     "サーバーレス": "serverless",
     "アーキテクト": "architect",
-    "スケジュール": "lịch trình",
+    "スケジュール": "schedule",
     "ネットワーク": "network",
     "ライブラリ": "library",
     "バックログ": "backlog",
@@ -217,7 +217,7 @@ KATAKANA_TERMS: dict[str, str] = {
     "エンジニア": "engineer",
     "レビュー": "review",
     "スクラム": "Scrum",
-    "アジェンダ": "chương trình nghị sự",
+    "アジェンダ": "agenda",
     "アマゾン": "Amazon",
     "インフラ": "infrastructure",
     "オンプレ": "on-premises",
@@ -284,18 +284,8 @@ KATAKANA_TERMS: dict[str, str] = {
     "ドキュメント": "document",
     "グループ": "group",
     "ウォーターフォール": "waterfall",
-    # Overlaps with PROPER_NOUNS (kept separate in KATAKANA_TERMS because
-    # pre-substitution runs before PROPER_NOUN_MAP, so the katakana value
-    # must stand on its own — dead code warning: PROPER_NOUNS entries for
-    # these terms are skipped during pre-processing)
-    "クロステナント": "Cross-Tenant",
-    "マルチテナント": "Multi-Tenant",
-    "ダッシュボード": "dashboard",
-    "ステータス": "trạng thái",
-    "リリース": "release",
-    "トリアージ": "triage",
-    "バイタル": "vital signs",
-    "インシデント": "incident",
+    "フェーズ": "phase",
+    "メーター": "metrics",
 }
 
 # ── Build-time validation ────────────────────────────────────────────────
@@ -310,6 +300,14 @@ for term, vi in DOMAIN_TERMS.items():
             _OVERLAP_WARNINGS.append(
                 f"DOMAIN_TERMS['{term}']='{vi}' vs PROPER_NOUNS['{term}']='{pn_vi}'"
             )
+# KATAKANA_TERMS is applied before PROPER_NOUNS, so a PROPER_NOUNS entry for the
+# same key is shadowed (dead). Case differences are harmless (both romanize the
+# same), but a genuine meaning divergence would be a silent bug — flag it.
+for term, kt_vi in KATAKANA_TERMS.items():
+    if term in PROPER_NOUNS and kt_vi.lower() != PROPER_NOUNS[term].lower():
+        _OVERLAP_WARNINGS.append(
+            f"KATAKANA_TERMS['{term}']='{kt_vi}' vs PROPER_NOUNS['{term}']='{PROPER_NOUNS[term]}'"
+        )
 
 if _OVERLAP_WARNINGS:
     import logging

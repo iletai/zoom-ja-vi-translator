@@ -33,6 +33,10 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from src.display import SubtitleDisplay
 
 logger = logging.getLogger("speaksy.host")
 
@@ -48,7 +52,7 @@ if str(_ROOT) not in sys.path:
 # Load .env so ZT_WEBHOOK_URL and other settings are available even before
 # config.py is imported (demo mode never imports config until _RealEngine).
 try:
-    import config as _config  # noqa: F401 — side-effect: loads .env into os.environ
+    import config  # noqa: F401 — side-effect: loads .env into os.environ
 except Exception:
     pass  # best-effort; env vars set in the shell still work
 
@@ -146,7 +150,7 @@ async def translate_ja_vi(text: str, fallback: str) -> str:
     t = get_translator()
     if t is None:
         return fallback
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         out = await loop.run_in_executor(None, t.translate, text)
         return (out or "").strip() or fallback
@@ -155,7 +159,7 @@ async def translate_ja_vi(text: str, fallback: str) -> str:
         return fallback
 
 
-def _fire_webhook(session_id: str, seq: int, japanese: str, vietnamese: str) -> None:
+def _fire_webhook(_session_id: str, seq: int, japanese: str, vietnamese: str) -> None:
     """POST one translated pair to the webhook URL configured in ZT_WEBHOOK_URL."""
     url = os.environ.get("ZT_WEBHOOK_URL", "")
     if not url:
@@ -226,8 +230,8 @@ class _DemoEngine:
         self._task.cancel()
         try:
             await self._task
-        except asyncio.CancelledError:
-            pass
+        except (asyncio.CancelledError, Exception):
+            pass  # cancelled, or already died mid-send — tearing down either way
         self._task = None
 
     async def _run(self) -> None:
@@ -279,7 +283,7 @@ class _DemoEngine:
         })
 
 
-class WsDisplay:
+class WsDisplay:  # structurally satisfies SubtitleDisplay (duck-typed)
     """A ``SubtitleDisplay`` look-alike that forwards the pipeline to WebSocket.
 
     The real ``TranslationPipeline`` pushes results by calling display methods
@@ -299,7 +303,11 @@ class WsDisplay:
 
     def _emit(self, coro) -> None:
         try:
-            asyncio.run_coroutine_threadsafe(coro, self._loop)
+            fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+            fut.add_done_callback(
+                lambda f: logger.debug("WsDisplay send error: %s", f.exception())
+                if f.exception() else None
+            )
         except RuntimeError:
             pass  # loop closed during shutdown
 
@@ -307,7 +315,7 @@ class WsDisplay:
         self._emit(self._conn.send(obj))
 
     # ---- SubtitleDisplay surface used by the pipeline ---------------------- #
-    def show_source(self, japanese: str, seq: int | None = None) -> None:
+    def show_source(self, japanese: str, _seq: int | None = None) -> None:
         self._last_src = japanese or ""
         self._send({
             "type": "engine/subtitle",
@@ -326,7 +334,7 @@ class WsDisplay:
     def finalize_source(self, japanese: str) -> None:
         self._last_src = japanese or self._last_src
 
-    def show_target(self, vietnamese: str, japanese: str | None = None, seq: int | None = None) -> None:
+    def show_target(self, vietnamese: str, japanese: str | None = None, _seq: int | None = None) -> None:
         src = japanese if japanese is not None else self._last_src
         self._send({
             "type": "engine/subtitle",
@@ -366,7 +374,7 @@ class _RealEngine:
         self._from = from_lang
         self._to = to_lang
         self._device_id = device_id
-        self._loop = asyncio.get_event_loop()
+        self._loop = asyncio.get_running_loop()
         self._pipeline = None
         self._thread: threading.Thread | None = None
 
@@ -379,8 +387,8 @@ class _RealEngine:
         if pipeline is not None:
             try:
                 pipeline.stop_event.set()  # cooperative shutdown of all stages
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("stop error: %s", exc)
         # run_forever() returns once the stop_event propagates; join off-loop.
         if self._thread is not None:
             await self._loop.run_in_executor(None, self._thread.join, 5.0)
@@ -406,7 +414,7 @@ class _RealEngine:
             if not streaming:
                 display.info("Streaming ASR model not found; using offline recognizer.")
             self._pipeline = TranslationPipeline(
-                device=device, display=display, streaming=streaming, backend="local",
+                device=device, display=cast("SubtitleDisplay", display), streaming=streaming, backend="local",
             )
             self._pipeline.run_forever()
         except Exception as exc:  # noqa: BLE001
@@ -467,7 +475,12 @@ class Connection:
         frame = _encode_text_frame(data)
         async with self._write_lock:
             self._writer.write(frame)
-            await self._writer.drain()
+            try:
+                await asyncio.wait_for(self._writer.drain(), timeout=5.0)
+            except (asyncio.TimeoutError, ConnectionResetError):
+                logger.warning("WS client write timeout/reset — closing connection")
+                self._writer.close()
+                raise
 
     # ---- lifecycle --------------------------------------------------------- #
     async def serve(self) -> None:
@@ -476,6 +489,8 @@ class Connection:
                 msg = await _read_message(self._reader)
                 if msg is None:
                     break  # close frame or EOF
+                if msg == "":
+                    continue  # ping/pong — no dispatch needed
                 await self._dispatch(msg)
         except (asyncio.IncompleteReadError, ConnectionResetError):
             pass
@@ -593,6 +608,12 @@ async def _read_message(reader: asyncio.StreamReader) -> str | None:
     elif length == 127:
         (length,) = struct.unpack(">Q", await reader.readexactly(8))
 
+    # Cap inbound frames: the UI only sends tiny JSON control messages, so a
+    # multi-MB claimed length is malformed/hostile. Bail before allocating it.
+    # ponytail: 1 MiB cap, raise if the UI ever legitimately sends bigger frames.
+    if length > 1 << 20:
+        raise asyncio.IncompleteReadError(b"", length)
+
     mask = await reader.readexactly(4) if masked else b"\x00\x00\x00\x00"
     payload = bytearray(await reader.readexactly(length))
     if masked:
@@ -601,7 +622,7 @@ async def _read_message(reader: asyncio.StreamReader) -> str | None:
 
     if opcode == 0x8:  # close
         return None
-    if opcode == 0x9:  # ping — caller doesn't need it; pong is best-effort skipped
+    if opcode == 0x9:  # ping — return "" so serve() skips dispatch but stays open
         return ""
     if opcode == 0xA:  # pong
         return ""
@@ -623,10 +644,17 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
         method, path = (parts[0], parts[1]) if len(parts) >= 2 else ("GET", "/")
 
         headers: dict[str, str] = {}
+        header_count = 0
+        header_bytes = 0
         while True:
             line = await reader.readline()
             if line in (b"\r\n", b"\n", b""):
                 break
+            header_count += 1
+            header_bytes += len(line)
+            if header_count > 100 or header_bytes > 8192:  # slow-loris guard
+                writer.close()
+                return
             k, _, v = line.decode("latin-1").partition(":")
             headers[k.strip().lower()] = v.strip()
 
@@ -658,7 +686,7 @@ async def _do_handshake(writer: asyncio.StreamWriter, headers: dict[str, str]) -
     await writer.drain()
 
 
-async def _serve_http(writer: asyncio.StreamWriter, method: str, path: str) -> None:
+async def _serve_http(writer: asyncio.StreamWriter, _method: str, path: str) -> None:
     clean = path.split("?", 1)[0]
     if clean in ("/", "/index.html", "/rd_ui_v1.1.html"):
         body = _UI_FILE.read_bytes()

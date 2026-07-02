@@ -162,15 +162,37 @@ def test_greeting_followed_by_ga_continuation_stays_joined() -> None:
     assert "".join(out) == text
 
 
-def test_flush_merges_dangling_tail_with_previous_sentence() -> None:
+def test_flush_dangling_after_hard_final_emits_separately() -> None:
+    # "が" is dangling, but sentences[-1] ends with 。 — appending would produce
+    # broken Japanese ("今日は晴れです。が").  It must be emitted as a separate
+    # fragment so the translator receives two clean tokens, not one broken one.
     agg = SentenceAggregator()
     src = "今日は晴れです。が"
     agg._buffer = src
     out = agg.flush()
-    assert out == [src], out
-    assert "が" not in out
+    assert out == ["今日は晴れです。", "が"], out
     assert "".join(out) == src
     assert agg.pending() == ""
+
+
+def test_flush_merges_dangling_tail_without_hard_final() -> None:
+    # "が" after a non-punctuated sentence should still merge (original intent).
+    agg = SentenceAggregator()
+    agg._buffer = "わかりましたが"
+    out = agg.flush()
+    # _extract(flush=True) treats "ました" as terminal → sentence "わかりました",
+    # remainder "が" → no hard final → merges → "わかりましたが"
+    assert out == ["わかりましたが"], out
+    assert agg.pending() == ""
+
+
+def test_ends_with_connective() -> None:
+    agg = SentenceAggregator()
+    assert agg.ends_with_connective("行けないので")        # ので suffix → True
+    assert agg.ends_with_connective("難しいから")          # から suffix → True
+    assert not agg.ends_with_connective("分かりました")    # terminal ending → False
+    assert not agg.ends_with_connective("")               # empty → False
+    assert not agg.ends_with_connective("が")             # single char, not in list → False
 
 
 def main() -> int:

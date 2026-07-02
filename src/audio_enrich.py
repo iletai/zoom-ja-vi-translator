@@ -122,7 +122,7 @@ def normalize_utterance(audio: np.ndarray) -> np.ndarray:
     gain = min(target / peak, max_gain)
     if gain <= 1.0:
         return x  # already loud enough — never attenuate (clip guard covers peaks)
-    return np.clip(x * np.float32(gain), -1.0, 1.0).astype(np.float32, copy=False)
+    return np.clip(x * np.float32(gain), -1.0, 1.0)  # ponytail: x*float32 is float32; clip preserves dtype
 
 
 class AudioEnricher:
@@ -205,7 +205,7 @@ class AudioEnricher:
         if self._lfilter is not None:
             # zi holds [R*y[-1] - x[-1]] for this b/a; seed from carried samples.
             zi = np.array([self._hp_r * self._hp_prev_y - self._hp_prev_x], dtype=np.float64)
-            y, zf = self._lfilter(self._hp_b, self._hp_a, x.astype(np.float64), zi=zi)
+            y, _ = self._lfilter(self._hp_b, self._hp_a, x.astype(np.float64), zi=zi)
             self._hp_prev_x = float(x[-1])
             self._hp_prev_y = float(y[-1])
             return y.astype(np.float32)
@@ -227,7 +227,7 @@ class AudioEnricher:
 
     def _agc(self, x: np.ndarray) -> np.ndarray:
         """Scale toward target RMS, capped, skipping silence."""
-        rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
+        rms = float(np.sqrt(np.dot(x, x) / x.size)) if x.size else 0.0  # ponytail: dot avoids x*x temp, matches vad._frame_rms
         if rms < self.noise_floor_rms:
             return x  # silence / room tone — don't amplify
         gain = self.target_rms / rms
@@ -236,7 +236,7 @@ class AudioEnricher:
         elif gain < 1.0:
             # Only gain up; loud blocks are left alone (clip guard handles peaks).
             return x
-        return (x * np.float32(gain)).astype(np.float32)
+        return x * np.float32(gain)  # ponytail: x is float32, scalar is float32 → result is float32, no astype needed
 
 
 def make_enricher(sample_rate: int | None = None) -> "AudioEnricher | None":

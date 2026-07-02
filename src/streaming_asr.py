@@ -90,7 +90,7 @@ class StreamingJapaneseASR:
             self._overlap = np.zeros(0, dtype=np.float32)
             return
 
-        overlap = self._overlap.copy()
+        overlap = self._overlap
         self._overlap = np.zeros(0, dtype=np.float32)
         if overlap.size == 0:
             return

@@ -11,7 +11,7 @@ each carrying correlation fields (``seq``, monotonic timestamp, thread) so the
 full life of a recognized utterance can be traced end to end:
 
     asr_final / aggregator_emit  ->  enqueue  ->  translate  ->  display
-                                       \-> queue_drop / dedup_skip (loss!)
+                                       └-> queue_drop / dedup_skip (loss!)
 
 It is **opt-in** and a no-op unless configured (env ``ZT_EVIDENCE_LOG=<path>``
 or ``--log <path>``). Events are sentence-level (a few per second at most), so a
@@ -69,6 +69,9 @@ def is_enabled() -> bool:
 
 def get_dropped_event_count() -> int:
     """Return the number of evidence events lost to logger failures."""
+    # ponytail: no lock needed — CPython int read is a single LOAD_GLOBAL (GIL-atomic).
+    # Worst case: caller sees a count that's 1 behind; fine for a health metric.
+    # Add a lock if this ever needs to be accurate under free-threaded Python (PEP 703).
     return _dropped_event_count
 
 
@@ -83,7 +86,8 @@ def summarize() -> dict[str, Any]:
 
 def _record_dropped_event(event: str, error: BaseException) -> None:
     global _dropped_event_count
-    _dropped_event_count += 1
+    with _lock:
+        _dropped_event_count += 1
     print(
         f"[evidence_log] dropped audit event {event!r}: {error}",
         file=sys.stderr,

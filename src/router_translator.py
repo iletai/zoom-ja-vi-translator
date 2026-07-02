@@ -35,10 +35,11 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 import config
-from src.domain_data import KATAKANA_TERMS, PROPER_NOUNS
+from src.domain_data import DOMAIN_TERMS, KATAKANA_TERMS, PROPER_NOUNS
 from src.japanese_names import KATAKANA_NAMES, SURNAME_MAP
 from src.post_correction import post_correct
 from src.sentence_aggregator import split_japanese_sentences
+from src.translator import join_translations
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +63,6 @@ def _is_latin(s: str) -> bool:
 # avoids the hybrid-sentence problem while still pinning terminology. Sourced
 # from the shared PROPER_NOUNS / DOMAIN_TERMS single source of truth.
 def _build_glossary_block() -> str:
-    from src.domain_data import DOMAIN_TERMS
-
     pairs: list[tuple[str, str]] = []
     seen: set[str] = set()
     # Prefer DOMAIN_TERMS (lowercase Vietnamese) then non-Latin PROPER_NOUNS.
@@ -97,6 +96,7 @@ _FILLER_MAP = {
     "ああ": "À", "あ": "À", "まあ": "Thôi thì", "なるほど": "Ra vậy",
     "なるほどね": "Ra vậy nhỉ", "そうですね": "Đúng vậy nhỉ", "そうそう": "Đúng, đúng",
     "ですね": "Đúng vậy", "こんにちは": "Xin chào", "おはようございます": "Chào buổi sáng",
+    "そっか": "Vậy à", "そうか": "Vậy à", "そうかそうか": "Vậy à, vậy à",
 }
 
 
@@ -111,7 +111,8 @@ def _looks_like_refusal_or_echo(src: str, out: str) -> bool:
     if not out:
         return True
     low = out.lower()
-    if low.startswith(("here is", "translation:", "вот", "sure,", "câu dịch", "bản dịch:")):
+    if low.startswith(("here is", "translation:", "вот", "sure,", "câu dịch", "bản dịch:",
+                        "câu trả lời:", "tôi sẽ dịch:", "<source_ja>")):
         return True
     # Echoed the source verbatim (model declined to translate).
     return out.strip() == src.strip()
@@ -125,19 +126,28 @@ class RouterTranslator:
         self.url = f"{self.base_url}/chat/completions"
         self.model = str(config.ROUTER_MODEL)
         self.api_key = str(config.ROUTER_API_KEY)
-        # Pin domain terminology by appending the shared Vietnamese glossary to
-        # the system prompt (terms left as kanji in the source — see _preprocess).
+        # Pin domain terminology via the shared Vietnamese glossary. Insert it as
+        # a <glossary> block BEFORE the "Remember:" sandwich so that recency anchor
+        # stays the last thing the model reads (Anthropic prompt-eng: most critical
+        # instruction last). Appending after the sandwich would bury it under a
+        # term dump and weaken the "output Vietnamese only" close.
         base_prompt = str(config.ROUTER_SYSTEM_PROMPT)
         glossary = _build_glossary_block()
-        self.system_prompt = (
-            f"{base_prompt}\n\nThuật ngữ chuyên ngành (dùng đúng các bản dịch sau): {glossary}"
-            if glossary else base_prompt
-        )
+        if glossary:
+            block = f"<glossary>\nDùng đúng các bản dịch thuật ngữ sau: {glossary}\n</glossary>\n"
+            marker = "Remember:"
+            idx = base_prompt.rfind(marker)
+            if idx != -1:
+                self.system_prompt = base_prompt[:idx] + block + base_prompt[idx:]
+            else:  # sandwich missing (custom ZT_ROUTER_PROMPT) — append as before
+                self.system_prompt = f"{base_prompt}\n\n{block}"
+        else:
+            self.system_prompt = base_prompt
         self.temperature = float(config.ROUTER_TEMPERATURE)
         self.max_tokens = int(config.ROUTER_MAX_TOKENS)
         self.timeout = float(config.ROUTER_TIMEOUT_S)
         self.context_sentences = max(0, int(config.ROUTER_CONTEXT_SENTENCES))
-        self.max_parallel = max(1, int(getattr(config, "ROUTER_MAX_PARALLEL", 4)))
+        self.max_parallel = max(1, int(config.ROUTER_MAX_PARALLEL))
 
         self._keep_context = self.context_sentences > 0
         self._history: deque[tuple[str, str]] = deque(
@@ -168,16 +178,25 @@ class RouterTranslator:
     def translate(self, text: str) -> str:
         if not text or not text.strip():
             return ""
-        if not getattr(config, "TRANSLATE_SPLIT_SENTENCES", True):
+        if not config.TRANSLATE_SPLIT_SENTENCES:
             return self._translate_one(text)
         sentences = split_japanese_sentences(text)
         if len(sentences) <= 1:
             return self._translate_one(sentences[0] if sentences else text)
-        # Multi-sentence: translate sequentially so each sentence's result enters
-        # the context window before the next one is translated — preserves
-        # consistency for proper nouns / topics that span sentences.
-        parts = [self._translate_one(s) for s in sentences]
-        return " ".join(p for p in parts if p).strip()
+        # With context ON: sequential so each sentence enters history before the next.
+        # With context OFF: parallel — no ordering dependency, saves N-1 RTTs.
+        if self._keep_context:
+            parts = [self._translate_one(s) for s in sentences]
+        else:
+            parts = self._translate_parallel(sentences)
+        # A sentence that came back empty (timeout / refusal filter) must show a
+        # visible (...) placeholder, not silently vanish — the same data-loss
+        # guard NLLB/LLM use via join_translations. Bare " ".join would drop it.
+        joined, dropped = join_translations(sentences, parts)
+        if dropped:
+            logger.warning("Router dropped %d/%d sentences in a multi-sentence segment",
+                           len(dropped), len(sentences))
+        return joined
 
     def translate_many(self, texts: list[str]) -> list[str]:
         """Translate several sentences concurrently, aligned with ``texts``.
@@ -187,7 +206,14 @@ class RouterTranslator:
         add N× latency; instead we fan the batch out over a small thread pool so
         the batch costs roughly one round-trip. Empty inputs map to ``""``.
         """
-        return self._translate_parallel(texts)
+        results = self._translate_parallel(texts)
+        if self._keep_context:
+            with self._lock:
+                for text, result in zip(texts, results):
+                    cleaned = post_correct(text.strip()) if text and text.strip() else ""
+                    if cleaned and result:
+                        self._history.append((cleaned, result))
+        return results
 
     def warmup(self) -> None:
         """Prime the connection + model so the first live segment isn't slow."""
@@ -243,6 +269,9 @@ class RouterTranslator:
         # Pure filler / back-channel: answer without a network round-trip.
         filler = _FILLER_MAP.get(cleaned)
         if filler is not None:
+            if update_context and self._keep_context:
+                with self._lock:
+                    self._history.append((cleaned, filler))
             return filler
 
         # Deterministic domain substitutions so the model receives clean,
@@ -290,8 +319,20 @@ class RouterTranslator:
         for kana, romaji in _SORTED_KATAKANA_NAMES:
             if f"{kana}さん" in out:
                 out = out.replace(f"{kana}さん", f"{romaji}-san")
-            elif kana in out:
-                out = out.replace(kana, romaji)
+                continue
+            if f"{kana}様" in out:
+                out = out.replace(f"{kana}様", f"{romaji}-sama")
+                continue
+            # Bare katakana name: only romanize when it stands on a word boundary,
+            # else common words swallow it (ジャンプ→"Janプ", カリスマ→"Carisマ").
+            # Same guard the LLM backend uses; keep the two in sync.
+            idx = out.find(kana)
+            if idx >= 0:
+                after = idx + len(kana)
+                before_ok = idx == 0 or out[idx - 1] in " 　。、"
+                after_ok = after >= len(out) or out[after] in " 　。、はがをにの"
+                if before_ok and after_ok:
+                    out = out.replace(kana, romaji)
         # Katakana IT/medical loanwords → English; then kanji proper nouns.
         for kana, eng in _SORTED_KATAKANA_TERMS:
             if kana in out:

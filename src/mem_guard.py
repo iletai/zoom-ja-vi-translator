@@ -54,6 +54,10 @@ def _total_ram_mb() -> float:
     return 0.0
 
 
+# Total RAM never changes — compute once at module load.
+_TOTAL_RAM_MB: float = _total_ram_mb()
+
+
 def oom_headroom_mb() -> float:
     """Approximate MB available before OOM (requires psutil)."""
     if not _HAVE_PSUTIL:
@@ -131,7 +135,7 @@ class MemoryMonitor(threading.Thread):
             self._baseline_mb = current_rss
             logger.info(
                 "[MemGuard] Baseline RSS=%.1f MB | Total RAM=%.1f MB | Headroom=%.1f MB",
-                current_rss, _total_ram_mb(), headroom,
+                current_rss, _TOTAL_RAM_MB, headroom,
             )
             return
 

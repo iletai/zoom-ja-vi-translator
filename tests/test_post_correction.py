@@ -26,17 +26,9 @@ def test_phrase_corrections():
         ("マルチ祖母アーキテクチャ", "マルチテナントアーキテクチャ"),
         ("ペナントの権限", "テナントの権限"),
     ]
-    passed = 0
     for inp, expected in cases:
         result = post_correct(inp)
-        if result == expected:
-            passed += 1
-        else:
-            print(f"  FAIL: post_correct({inp!r})")
-            print(f"    expected: {expected!r}")
-            print(f"    got:      {result!r}")
-    print(f"Phrase corrections: {passed}/{len(cases)} passed")
-    return passed == len(cases)
+        assert result == expected, f"post_correct({inp!r}) → {result!r}, expected {expected!r}"
 
 
 def test_context_corrections():
@@ -54,17 +46,9 @@ def test_context_corrections():
         # スケース → ユースケース when not preceded by ユー
         ("スケースを確認", "ユースケースを確認"),
     ]
-    passed = 0
     for inp, expected in cases:
         result = post_correct(inp)
-        if result == expected:
-            passed += 1
-        else:
-            print(f"  FAIL: post_correct({inp!r})")
-            print(f"    expected: {expected!r}")
-            print(f"    got:      {result!r}")
-    print(f"Context corrections: {passed}/{len(cases)} passed")
-    return passed == len(cases)
+        assert result == expected, f"post_correct({inp!r}) → {result!r}, expected {expected!r}"
 
 
 def test_no_false_positives():
@@ -79,15 +63,9 @@ def test_no_false_positives():
         "",
         "普通のテキスト",
     ]
-    passed = 0
     for inp in cases:
         result = post_correct(inp)
-        if result == inp:
-            passed += 1
-        else:
-            print(f"  FAIL: post_correct({inp!r}) modified to {result!r}")
-    print(f"No false positives: {passed}/{len(cases)} passed")
-    return passed == len(cases)
+        assert result == inp, f"post_correct({inp!r}) was modified to {result!r}"
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ Usage: python tests/test_meeting_accuracy.py
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
@@ -166,7 +168,7 @@ TRANSLATION_KEYWORD_CASES = [
     ),
     (
         "引き継ぎの資料を準備",
-        ["bàn giao"],
+        ["chuyển giao"],  # NLLB renders 引き継ぎ as "chuyển giao" via handover glossary
     ),
 ]
 
@@ -177,73 +179,36 @@ TRANSLATION_KEYWORD_CASES = [
 
 def test_post_correction():
     """Test post-ASR corrections on real meeting text."""
-    print("── Post-ASR Correction (real meeting inputs) ──")
-    passed = 0
-    total = len(POST_CORRECTION_CASES)
     for inp, expected in POST_CORRECTION_CASES:
         result = post_correct(inp)
-        if result == expected:
-            passed += 1
-        else:
-            print(f"  FAIL: '{inp[:50]}...'")
-            print(f"    expected: '{expected[:70]}...'")
-            print(f"    got:      '{result[:70]}...'")
-    print(f"  {passed}/{total} passed")
-    return passed == total
+        assert result == expected, f"post_correct({inp!r}) → {result!r}, expected {expected!r}"
 
 
 def test_no_false_positives():
     """Test that correctly recognized text is NOT modified."""
-    print("── No False Positives (correct text unchanged) ──")
-    passed = 0
-    total = len(CLEAN_TEXTS)
     for text in CLEAN_TEXTS:
         result = post_correct(text)
-        if result == text:
-            passed += 1
-        else:
-            print(f"  FAIL: '{text[:50]}' was modified to '{result[:50]}'")
-    print(f"  {passed}/{total} passed")
-    return passed == total
+        assert result == text, f"post_correct({text!r}) was modified to {result!r}"
 
 
 def test_glossary_entries():
     """Test that all required domain terms exist in NLLB_GLOSSARY."""
-    print("── Glossary Coverage (required domain terms) ──")
-    passed = 0
-    total = len(REQUIRED_GLOSSARY_ENTRIES)
     for jp_term, expected_replacement in REQUIRED_GLOSSARY_ENTRIES.items():
         actual = config.NLLB_GLOSSARY.get(jp_term)
-        if actual == expected_replacement:
-            passed += 1
-        elif actual is None:
-            print(f"  FAIL: '{jp_term}' NOT in glossary")
-        else:
-            print(f"  FAIL: '{jp_term}' → '{actual}' (expected '{expected_replacement}')")
-    print(f"  {passed}/{total} passed")
-    return passed == total
+        assert actual == expected_replacement, (
+            f"NLLB_GLOSSARY[{jp_term!r}] = {actual!r}, expected {expected_replacement!r}"
+        )
 
 
 def test_glossary_ordering():
     """Test that glossary applies longest-match-first."""
-    print("── Glossary Ordering (longest match priority) ──")
-    # Sort glossary keys by length descending (same as translator._apply_glossary)
     sorted_keys = sorted(config.NLLB_GLOSSARY.keys(), key=len, reverse=True)
-
-    passed = 0
-    total = len(GLOSSARY_ORDERING_CASES)
     for text, expected_sub in GLOSSARY_ORDERING_CASES:
-        # Simulate glossary application
         result = text
         for jp_key in sorted_keys:
             if jp_key in result:
                 result = result.replace(jp_key, config.NLLB_GLOSSARY[jp_key])
-        if expected_sub in result:
-            passed += 1
-        else:
-            print(f"  FAIL: '{text}' → '{result}' (missing '{expected_sub}')")
-    print(f"  {passed}/{total} passed")
-    return passed == total
+        assert expected_sub in result, f"{text!r} → {result!r}, missing {expected_sub!r}"
 
 
 def test_translation_keywords():
@@ -251,61 +216,37 @@ def test_translation_keywords():
 
     Requires NLLB model to be downloaded. Skipped if model unavailable.
     """
-    print("── Translation Keywords (requires NLLB model) ──")
     try:
         from src.translator import NllbTranslator
         translator = NllbTranslator()
     except Exception as e:
-        print(f"  SKIPPED: model not available ({e})")
-        return True  # Don't fail if model not present
+        pytest.skip(f"model not available: {e}")
 
-    passed = 0
-    total = len(TRANSLATION_KEYWORD_CASES)
     for jp_input, expected_keywords in TRANSLATION_KEYWORD_CASES:
-        try:
-            vi_output = translator.translate(jp_input)
-            vi_lower = vi_output.lower()
-            all_found = all(kw.lower() in vi_lower for kw in expected_keywords)
-            if all_found:
-                passed += 1
-            else:
-                missing = [kw for kw in expected_keywords if kw.lower() not in vi_lower]
-                print(f"  FAIL: '{jp_input[:40]}...'")
-                print(f"    output: '{vi_output}'")
-                print(f"    missing keywords: {missing}")
-        except Exception as e:
-            print(f"  ERROR: '{jp_input[:30]}...' → {e}")
-    print(f"  {passed}/{total} passed")
-    return passed == total
+        vi_output = translator.translate(jp_input)
+        vi_lower = vi_output.lower()
+        missing = [kw for kw in expected_keywords if kw.lower() not in vi_lower]
+        assert not missing, (
+            f"translate({jp_input!r}) → {vi_output!r}, missing keywords: {missing}"
+        )
 
 
 def test_config_parameters():
     """Test that performance parameters are set correctly."""
-    print("── Config Parameters (performance settings) ──")
     checks = [
         ("NLLB_MAX_DECODING_LENGTH", config.NLLB_MAX_DECODING_LENGTH, 128),
         ("NLLB_NO_REPEAT_NGRAM_SIZE", config.NLLB_NO_REPEAT_NGRAM_SIZE, 4),
         ("NLLB_REPETITION_PENALTY", config.NLLB_REPETITION_PENALTY, 1.2),
         ("LLM_RAM_CACHE_MB", config.LLM_RAM_CACHE_MB, 256),
     ]
-    passed = 0
-    total = len(checks)
     for name, actual, expected in checks:
-        if actual == expected:
-            passed += 1
-        else:
-            print(f"  FAIL: {name} = {actual} (expected {expected})")
-    print(f"  {passed}/{total} passed")
-    return passed == total
+        assert actual == expected, f"{name} = {actual!r}, expected {expected!r}"
 
 
 def test_post_translation_corrections():
     """Test that post-translation correction dict exists and has key entries."""
-    print("── Post-Translation Corrections (NLLB output fixes) ──")
     corrections = getattr(config, "NLLB_POST_TRANSLATION", None)
-    if corrections is None:
-        print("  FAIL: NLLB_POST_TRANSLATION not found in config")
-        return False
+    assert corrections is not None, "NLLB_POST_TRANSLATION not found in config"
 
     required = {
         "người thuê nhà": "tenant",
@@ -313,47 +254,28 @@ def test_post_translation_corrections():
         "thừa kế thai nhi": "bàn giao",
         "thai nhi": "bàn giao",
     }
-    passed = 0
-    total = len(required)
     for wrong, expected_right in required.items():
         actual = corrections.get(wrong)
-        if actual == expected_right:
-            passed += 1
-        elif actual is None:
-            print(f"  FAIL: '{wrong}' NOT in corrections")
-        else:
-            print(f"  FAIL: '{wrong}' → '{actual}' (expected '{expected_right}')")
-    print(f"  {passed}/{total} passed")
-    return passed == total
+        assert actual == expected_right, (
+            f"NLLB_POST_TRANSLATION[{wrong!r}] = {actual!r}, expected {expected_right!r}"
+        )
 
 
 def test_hotwords_no_comments():
     """Test that hotwords_it.txt has no comment lines (sherpa-onnx bug)."""
-    print("── Hotwords File (no comment lines) ──")
     hotwords_path = Path("hotwords_it.txt")
     if not hotwords_path.is_file():
-        print("  SKIPPED: hotwords_it.txt not found")
-        return True
+        pytest.skip("hotwords_it.txt not found")
 
     lines = hotwords_path.read_text(encoding="utf-8").splitlines()
     comment_lines = [i + 1 for i, l in enumerate(lines) if l.strip().startswith("#")]
-    if comment_lines:
-        print(f"  FAIL: comment lines found at: {comment_lines}")
-        print("  sherpa-onnx does NOT skip # lines — they corrupt hotword loading!")
-        return False
-    # Also check format: each non-empty line should be "word :score"
-    bad_lines = []
-    for i, l in enumerate(lines):
-        l = l.strip()
-        if not l:
-            continue
-        if " :" not in l:
-            bad_lines.append((i + 1, l))
-    if bad_lines:
-        print(f"  FAIL: malformed lines: {bad_lines[:5]}")
-        return False
-    print(f"  OK: {len(lines)} lines, no comments, all properly formatted")
-    return True
+    assert not comment_lines, (
+        f"comment lines found at {comment_lines} — sherpa-onnx does NOT skip # lines"
+    )
+    bad_lines = [
+        (i + 1, l.strip()) for i, l in enumerate(lines) if l.strip() and " :" not in l.strip()
+    ]
+    assert not bad_lines, f"malformed lines (missing ' :'): {bad_lines[:5]}"
 
 
 if __name__ == "__main__":

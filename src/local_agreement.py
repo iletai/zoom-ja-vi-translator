@@ -61,18 +61,18 @@ class LocalAgreementBuffer:
         if committed and not h.startswith(committed):
             committed = longest_common_prefix(committed, h)
 
-        self._history.append(h)
         if self.n == 2:
             agreed = longest_common_prefix(self.prev, h)
-        elif len(self._history) >= self.n:
-            agreed = _common_prefix_all(self._history)
         else:
-            agreed = ""
+            self._history.append(h)
+            if len(self._history) >= self.n:
+                agreed = _common_prefix_all(self._history)
+            else:
+                agreed = ""
 
         if len(agreed) > len(committed):
             committed = agreed
-        if committed and not h.startswith(committed):
-            committed = longest_common_prefix(committed, h)
+        # committed is already a prefix of h: line 61-62 guarantees this invariant.
 
         self.committed = committed
         self.prev = h
