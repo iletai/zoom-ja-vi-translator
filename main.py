@@ -111,10 +111,9 @@ def parse_args() -> argparse.Namespace:
 
 def select_device(args: argparse.Namespace, display: SubtitleDisplay):
     """Resolve which capture device to use based on CLI args."""
-    devices = audio_capture.list_devices() if args.device_index is not None else None
-
     if args.device_index is not None:
-        if devices is None or not (0 <= args.device_index < len(devices)):
+        devices = audio_capture.list_devices()
+        if not (0 <= args.device_index < len(devices)):
             display.info(f"Invalid --device-index {args.device_index}.")
             return None
         device = devices[args.device_index]["device"]

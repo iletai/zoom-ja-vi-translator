@@ -11,14 +11,13 @@ Tests cover:
 from __future__ import annotations
 
 import sys
-import threading
-from collections import deque
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.llm_translator import LlmTranslator  # noqa: E402
+from conftest import build_llm_translator  # noqa: E402
 
 
 class _DummyLlm:
@@ -61,30 +60,8 @@ class _DummyLlm:
 
 def _make_translator(response_text: str = "Bản dịch thử") -> tuple[LlmTranslator, _DummyLlm]:
     """Create a translator with mocked LLM for testing."""
-    translator = LlmTranslator.__new__(LlmTranslator)
-    translator._keep_context = False
-    translator._history = deque(maxlen=1)
-    translator._lock = threading.Lock()
-    translator._chinese_logit_bias = {}
-    translator._vi_grammar = None
-    translator._fast_translator = None
-    translator.system_prompt = "test"
-    translator.context_sentences = 0
-    translator.temperature = 0.1
-    translator.top_p = 0.3
-    translator.frequency_penalty = 0.1
-    translator.max_tokens = 150
-    translator.n_ctx = 768
-    # Lookup tables built in __init__ (helper bypasses __init__ via __new__).
-    translator._sorted_jp_dow = sorted(
-        LlmTranslator._JP_DOW_MAP.items(), key=lambda x: -len(x[0]))
-    translator._sorted_katakana_terms = sorted(
-        LlmTranslator._KATAKANA_TERM_MAP.items(), key=lambda x: -len(x[0]))
-    translator._sorted_proper_nouns = sorted(
-        LlmTranslator._PROPER_NOUN_MAP.items(), key=lambda x: -len(x[0]))
     dummy_llm = _DummyLlm(response_text=response_text)
-    translator.llm = dummy_llm
-    return translator, dummy_llm
+    return build_llm_translator(dummy_llm), dummy_llm
 
 
 # ──── Logit Bias Tests ────────────────────────────────────────────────────────
@@ -351,7 +328,7 @@ class TestExpandedFillerMap:
             assert result == expected
 
     def test_truncated_filler_prefix_match(self):
-        """Fillers with 1-2 chars truncated should still match."""
+        """A filler truncated by ONE final mora should still match."""
         translator, _ = _make_translator()
         # "うんうんうん" (6 chars) → prefix with 5 chars "うんうんう" should match
         result = translator._translate_one("うんうんう", update_context=False)

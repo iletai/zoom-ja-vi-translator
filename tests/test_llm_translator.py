@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import sys
-import threading
-from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.llm_translator import LlmTranslator  # noqa: E402
+from conftest import build_llm_translator  # noqa: E402
 
 
 class _DummyLlm:
@@ -26,22 +25,8 @@ class _DummyLlm:
 
 
 def _make_translator(response_text: str = "Bản dịch thử") -> tuple[LlmTranslator, _DummyLlm]:
-    translator = LlmTranslator.__new__(LlmTranslator)
-    translator._keep_context = False
-    translator._history = deque(maxlen=1)
-    translator._lock = threading.Lock()
-    translator._chinese_logit_bias = {}
-    translator._vi_grammar = None
-    translator.system_prompt = "test"
-    translator.context_sentences = 0
-    translator.temperature = 0.1
-    translator.top_p = 0.3
-    translator.frequency_penalty = 0.1
-    translator.max_tokens = 150
-    translator.n_ctx = 768
     dummy_llm = _DummyLlm(response_text=response_text)
-    translator.llm = dummy_llm
-    return translator, dummy_llm
+    return build_llm_translator(dummy_llm), dummy_llm
 
 
 def test_clean_translation_rejects_meta_greeting_and_promise() -> None:
@@ -92,6 +77,33 @@ def test_translate_one_matches_truncated_filler_prefix() -> None:
     assert translator._translate_one("ありがとうございま", update_context=False) == "Cảm ơn"
 
 
+def test_single_char_particle_is_not_filler_matched() -> None:
+    """A bare 1-char particle (は/が) must NOT short-circuit to a filler.
+
+    The prefix matcher used to map は→はい→"Vâng", mistranslating the topic
+    particle as an acknowledgement. It must reach the real translation path.
+    """
+    translator, dummy = _make_translator(response_text="Về phần đó")
+    result = translator._translate_one("は", update_context=False)
+    assert result == "Về phần đó", "は must be translated, not canned as Vâng"
+    assert dummy.prompt is not None, "は must reach the LLM, not short-circuit"
+
+
+def test_two_char_real_word_is_not_filler_matched() -> None:
+    """2-char real words must NOT prefix-match a longer filler.
+
+    です (copula), なる (verb), そう (adverb) each prefix a filler
+    (ですね/なるほど/そうそう). The >=3-char floor + 1-mora window keep them out;
+    a >=2 floor (a prior regression) would canned-answer them. Guards CI against
+    that revert — a 1-char-only test passes under both floors and misses it.
+    """
+    for word in ("です", "なる", "そう"):
+        translator, dummy = _make_translator(response_text="dịch thật")
+        result = translator._translate_one(word, update_context=False)
+        assert result == "dịch thật", f"{word!r} must be translated, not canned"
+        assert dummy.prompt is not None, f"{word!r} must reach the LLM"
+
+
 def test_clean_translation_keeps_short_unaccented_vietnamese() -> None:
     assert LlmTranslator._clean_translation("cho con") == "cho con"
 
@@ -110,8 +122,10 @@ def test_translate_one_replaces_proper_nouns_after_katakana_preprocessing() -> N
 def test_translate_one_uses_added_katakana_term_overrides() -> None:
     translator, _ = _make_translator()
 
-    assert translator._translate_one("トークイベント", update_context=False) == "sự kiện thảo luận"
-    assert translator._translate_one("トークイーブメント", update_context=False) == "sự kiện thảo luận"
+    # トークイベント/トークイーブメント map to English "talk event" so the source
+    # stays consistently ASCII before the LLM (KATAKANA_TERMS single-source-of-truth).
+    assert translator._translate_one("トークイベント", update_context=False) == "talk event"
+    assert translator._translate_one("トークイーブメント", update_context=False) == "talk event"
 
 
 def test_build_raw_prompt_uses_true_prefill() -> None:

@@ -288,6 +288,92 @@ KATAKANA_TERMS: dict[str, str] = {
     "メーター": "metrics",
 }
 
+# ── Filler / back-channel utterances (shared by router + LLM backends) ────
+# Pure back-channels, greetings, and fixed acknowledgements whose Vietnamese
+# rendering is invariant. Both backends short-circuit these to skip a network
+# round-trip (router) / LLM inference (llm) and to stop weak models from
+# over-expanding them ("はい" → "Vâng được ạ"). Single source of truth so the
+# two backends never drift (they had 22 vs 72 entries before consolidation).
+# NOTE: entries like 聞こえますか/難しいですか are fixed meeting phrases with one
+# correct rendering, not context-dependent questions — safe to canned-answer.
+FILLER_MAP: dict[str, str] = {
+    # ── Back-channels / acknowledgements ──────────────────────────────
+    "うん": "Vâng", "うんうん": "Vâng, vâng", "うんうんはい": "Vâng, vâng, đúng rồi",
+    "うんうんうん": "Vâng vâng vâng", "はい": "Vâng", "はいはい": "Vâng, vâng",
+    "はいはいはい": "Vâng vâng vâng", "はいもね": "Vâng, đúng nhỉ", "ええ": "Vâng",
+    "え": "Ơ", "えっと": "À...", "あの": "À...", "あのう": "À...", "ああ": "À",
+    "あ": "À", "まあ": "Thôi thì", "なるほど": "Ra vậy", "なるほどね": "Ra vậy nhỉ",
+    "そうですね": "Đúng vậy nhỉ", "そうそう": "Đúng, đúng", "そうそうそう": "Đúng đúng đúng",
+    "ですね": "Đúng vậy", "っていう": "Nghĩa là", "ます": "...", "ねえ": "Này",
+    "ねえねえ": "Này này", "うんねえねえ": "Vâng, này này",
+    "そっか": "Vậy à", "そうか": "Vậy à", "そうかそうか": "Vậy à, vậy à",
+    # ── Greetings / meeting phrases ───────────────────────────────────
+    "こんにちは": "Xin chào", "こんばんは": "Chào buổi tối",
+    "おはようございます": "Chào buổi sáng", "お願いします": "Xin hãy giúp",
+    "お願いいたします": "Xin vui lòng", "お世話になっております": "Cảm ơn đã luôn giúp đỡ",
+    "お世話になります": "Xin được nhờ vả", "お疲れ様です": "Xin chào",
+    "お疲れ様でした": "Cảm ơn đã vất vả", "よろしくお願いします": "Xin vui lòng hỗ trợ",
+    "よろしくお願いいたします": "Rất mong được hỗ trợ", "ありがとうございます": "Cảm ơn",
+    "ありがとうございました": "Cảm ơn rất nhiều",
+    "先日は打ち合わせありがとうございました": "Cảm ơn về cuộc họp hôm trước",
+    "先日はありがとうございました": "Cảm ơn về hôm trước",
+    "いえいえこちらこそ": "Không không, bên tôi mới phải cảm ơn",
+    "いかがですか": "Thế nào ạ?", "いかがでしょうか": "Thế nào ạ?",
+    "難しいですか": "Có khó không?", "難しいと思います": "Tôi nghĩ là khó",
+    "すみません": "Xin lỗi", "申し訳ございません": "Thành thật xin lỗi",
+    "失礼します": "Xin phép", "失礼いたします": "Xin phép ạ",
+    "承知しました": "Tôi đã hiểu", "了解です": "Đã hiểu", "了解しました": "Đã hiểu rồi",
+    "かしこまりました": "Vâng, tôi hiểu", "おっしゃる通りです": "Đúng như bạn nói",
+    "そういうことですね": "À ra là vậy", "その通りです": "Đúng vậy",
+    "間違いないです": "Không sai", "以上です": "Trên đây là tất cả",
+    "以上になります": "Trên đây là tất cả", "みなさんこんにちは": "Xin chào mọi người",
+    "皆さんこんにちは": "Xin chào mọi người", "では始めましょう": "Vậy chúng ta bắt đầu nhé",
+    "始めましょう": "Bắt đầu thôi", "それでは": "Vậy thì",
+    "ちょっと待ってください": "Xin đợi một chút", "少々お待ちください": "Xin vui lòng chờ một chút",
+    "聞こえますか": "Nghe được không?", "見えますか": "Nhìn thấy không?",
+    "大丈夫です": "Không sao", "問題ないです": "Không có vấn đề gì",
+}
+
+
+def match_filler(cleaned: str) -> str | None:
+    """Return the canned Vietnamese for a filler/back-channel, or None.
+
+    Exact match first, then a prefix match for a filler the ASR truncated by ONE
+    trailing mora (e.g. ``ありがとうございま`` for ``ありがとうございます``). Two
+    guards keep real words from false-matching a longer filler:
+      - input must be >=3 chars — a 1-2 char string (は particle, です copula,
+        なる verb) is real content, not a cut filler; matching です→ですね→"Đúng
+        vậy" or なる→なるほど→"Ra vậy" is a mistranslation.
+      - at most 1 char may be missing — ASR drops the final mora (す/した→し),
+        not two; allowing a 2-char gap let です match ですね and なる match なるほど.
+    Shared by both backends so their short-circuit behaviour never drifts.
+    """
+    result = FILLER_MAP.get(cleaned)
+    if result is None and len(cleaned) >= 3:
+        for key, val in FILLER_MAP.items():
+            if key.startswith(cleaned) and len(cleaned) >= len(key) - 1:
+                return val
+    return result
+
+
+# ── Hard refusal markers (shared by router + LLM backends) ────────────────
+# Unambiguous "I won't/can't translate" phrases. A chat model that refuses
+# instead of translating must have its output rejected, not shown as a subtitle
+# or (worse) fed into the context window where it poisons following segments.
+# Kept deliberately SHORT and unambiguous — softer preamble phrases ("tôi hiểu
+# rồi") are NOT here because they also occur in valid translations. Substring
+# match, case-insensitive.
+HARD_REFUSAL_PATTERNS: tuple[str, ...] = (
+    "tôi sẽ không dịch",
+    "tôi không thể dịch",
+    "tôi xin lỗi",
+    "nội dung nhạy cảm",
+    "không phù hợp",
+    "i cannot translate",
+    "i won't translate",
+    "i can't translate",
+)
+
 # ── Build-time validation ────────────────────────────────────────────────
 # Ensure no term appears in both DOMAIN_TERMS and PROPER_NOUNS with a
 # DIFFERENT Vietnamese translation (capitalisation aside, the meaning must

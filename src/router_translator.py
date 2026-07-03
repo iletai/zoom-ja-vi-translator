@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 import config
-from src.domain_data import DOMAIN_TERMS, KATAKANA_TERMS, PROPER_NOUNS
+from src.domain_data import DOMAIN_TERMS, FILLER_MAP, HARD_REFUSAL_PATTERNS, KATAKANA_TERMS, PROPER_NOUNS, match_filler
 from src.japanese_names import KATAKANA_NAMES, SURNAME_MAP
 from src.post_correction import post_correct
 from src.sentence_aggregator import split_japanese_sentences
@@ -90,14 +90,8 @@ _SORTED_PROPER_NOUNS = sorted(
 # Pure back-channel / filler utterances: translating these through an LLM both
 # wastes a round-trip and tends to over-expand them ("はい" → "Vâng được ạ").
 # An exact-match lookup returns the canonical short form and skips the network.
-_FILLER_MAP = {
-    "うん": "Vâng", "うんうん": "Vâng, vâng", "はい": "Vâng", "はいはい": "Vâng, vâng",
-    "ええ": "Vâng", "え": "Ơ", "えっと": "À...", "あの": "À...", "あのう": "À...",
-    "ああ": "À", "あ": "À", "まあ": "Thôi thì", "なるほど": "Ra vậy",
-    "なるほどね": "Ra vậy nhỉ", "そうですね": "Đúng vậy nhỉ", "そうそう": "Đúng, đúng",
-    "ですね": "Đúng vậy", "こんにちは": "Xin chào", "おはようございます": "Chào buổi sáng",
-    "そっか": "Vậy à", "そうか": "Vậy à", "そうかそうか": "Vậy à, vậy à",
-}
+# Shared single source of truth with the LLM backend (src.domain_data.FILLER_MAP).
+_FILLER_MAP = FILLER_MAP
 
 
 def _looks_like_refusal_or_echo(src: str, out: str) -> bool:
@@ -113,6 +107,12 @@ def _looks_like_refusal_or_echo(src: str, out: str) -> bool:
     low = out.lower()
     if low.startswith(("here is", "translation:", "вот", "sure,", "câu dịch", "bản dịch:",
                         "câu trả lời:", "tôi sẽ dịch:", "<source_ja>")):
+        return True
+    # Explicit refusal anywhere in the output (not just a prefix): a chat model
+    # that declined must not poison the context window. Shared with the LLM
+    # backend (domain_data.HARD_REFUSAL_PATTERNS) — only unambiguous phrases, so
+    # a valid translation is never rejected.
+    if any(p in low for p in HARD_REFUSAL_PATTERNS):
         return True
     # Echoed the source verbatim (model declined to translate).
     return out.strip() == src.strip()
@@ -211,7 +211,9 @@ class RouterTranslator:
             with self._lock:
                 for text, result in zip(texts, results):
                     cleaned = post_correct(text.strip()) if text and text.strip() else ""
-                    if cleaned and result:
+                    # Skip fillers: same exclusion as _translate_one — a はい→"Vâng"
+                    # pair anchors no terminology and would evict real context.
+                    if cleaned and result and match_filler(cleaned) is None:
                         self._history.append((cleaned, result))
         return results
 
@@ -244,7 +246,10 @@ class RouterTranslator:
             return out
         if len(jobs) == 1:
             i, t = jobs[0]
-            out[i] = self._translate_one(t)
+            # update_context=False: translate_many owns the history append (see
+            # its post-loop). Passing True here double-appends a solo batch —
+            # the common single-utterance path — evicting real context with a dup.
+            out[i] = self._translate_one(t, False)
             return out
         workers = min(self.max_parallel, len(jobs))
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -267,11 +272,12 @@ class RouterTranslator:
         cleaned = post_correct(cleaned)
 
         # Pure filler / back-channel: answer without a network round-trip.
-        filler = _FILLER_MAP.get(cleaned)
+        # Shared matcher (exact + truncated-prefix) — same behaviour as LLM backend.
+        # NOT added to history: a はい→"Vâng" pair anchors no terminology and, in a
+        # meeting full of back-channels, three in a row would evict every real
+        # turn from the context window — pure slot consumption, all downside.
+        filler = match_filler(cleaned)
         if filler is not None:
-            if update_context and self._keep_context:
-                with self._lock:
-                    self._history.append((cleaned, filler))
             return filler
 
         # Deterministic domain substitutions so the model receives clean,
@@ -380,6 +386,16 @@ class RouterTranslator:
                 # full timeout window with the same result. Fail fast instead.
                 logger.warning("Router timed out (attempt %d/2), giving up: %s", attempt, exc)
                 return ""
+            except requests.HTTPError as exc:
+                # A 4xx (bad request / bad auth) can never succeed on retry — fail
+                # fast. Only 429 (rate limit) and 5xx (transient server) are worth
+                # a second attempt.
+                code = exc.response.status_code if exc.response is not None else 0
+                if code != 429 and code < 500:
+                    logger.warning("Router HTTP %d (non-retryable), giving up: %s", code, exc)
+                    return ""
+                last_exc = exc
+                logger.warning("Router HTTP %d (attempt %d/2): %s", code, attempt, exc)
             except requests.RequestException as exc:
                 # Connection errors (refused, reset) are worth one retry.
                 last_exc = exc

@@ -53,6 +53,118 @@ def test_filler_socca() -> None:
     assert _FILLER_MAP.get("そっか") == "Vậy à"
 
 
+def test_filler_map_shared_with_llm_backend() -> None:
+    """Router and LLM must reference the SAME FILLER_MAP so they never drift.
+
+    Two separate dicts drifted to 22 vs 72 entries before consolidation; this
+    guards that both backends stay pinned to src.domain_data.FILLER_MAP.
+    """
+    from src.domain_data import FILLER_MAP as shared
+    assert _FILLER_MAP is shared, "router _FILLER_MAP must be the shared FILLER_MAP"
+    # A meeting greeting only the LLM used to have — now the router bypasses too.
+    assert _FILLER_MAP.get("お疲れ様です") == "Xin chào"
+    assert _FILLER_MAP.get("ありがとうございます") == "Cảm ơn"
+
+
+def test_match_filler_rejects_real_words_that_prefix_a_filler() -> None:
+    """Short real words must NOT prefix-match a longer filler (mistranslation).
+
+    です (copula "is"), なる (verb "become"), そう (adverb) each prefix a filler
+    (ですね/なるほど/そうそう) but are real content. The >=3-char floor + 1-mora
+    truncation window keep them out; a valid 1-mora-cut filler still matches.
+    """
+    from src.domain_data import match_filler
+    for real_word in ("です", "なる", "そう", "は", "が"):
+        assert match_filler(real_word) is None, f"{real_word!r} must reach real translation"
+    # Genuine ASR truncation (final mora dropped) still short-circuits.
+    assert match_filler("うんうんう") == "Vâng vâng vâng"
+    assert match_filler("ありがとうございま") == "Cảm ơn"
+
+
+def test_filler_not_added_to_history() -> None:
+    """Filler short-circuits must NOT enter the context window.
+
+    A はい→"Vâng" pair anchors no terminology; three back-channels in a row would
+    evict every real turn from the maxlen=3 window. Fillers skip history; real
+    sentences still enter it.
+    """
+    t = _make_translator(context_sentences=3)
+    t._post_with_retry = lambda _m: "Câu thật."
+    for f in ("はい", "うん", "ええ"):
+        t._translate_one(f)
+    assert len(t._history) == 0, "fillers must not populate history"
+    t._translate_one("本当の文です")
+    assert len(t._history) == 1, "a real sentence must still enter history"
+
+
+def test_filler_not_added_to_history_via_translate_many() -> None:
+    """The batch path (translate_many) must also exclude fillers from history.
+
+    _translate_one skips fillers, but translate_many appends batch results in a
+    separate post-loop — it must apply the SAME exclusion or fillers leak back in
+    (the pipeline's hot path is translate_many, so this is the real risk).
+    """
+    t = _make_translator(context_sentences=3)
+    t._post_with_retry = lambda m: "Vâng" if "はい" in m[-1]["content"] else "Câu thật."
+    t.translate_many(["これはテストです", "はい", "終わりました"])
+    keys = [src for src, _ in t._history]
+    assert "はい" not in keys, "filler leaked into history via translate_many"
+    assert keys == ["これはテストです", "終わりました"], "real turns must remain, in order"
+
+
+def test_hard_refusal_rejected_and_not_in_history() -> None:
+    """A model refusal must be rejected AND kept out of the context window.
+
+    Router used to only catch prefix refusals; a mid-string 'I cannot translate'
+    slipped through and poisoned the next 3 segments' context.
+    """
+    t = _make_translator(context_sentences=3)
+    t._post_with_retry = lambda _m: "I cannot translate that."
+    result = t._translate_one("これはテストです")
+    assert result == "", "hard refusal must be rejected"
+    assert len(t._history) == 0, "refusal must not poison history"
+    # A valid translation containing a soft phrase is NOT rejected.
+    t._post_with_retry = lambda _m: "Tôi hiểu rồi, cảm ơn anh."
+    assert t._translate_one("分かりましたありがとう") == "Tôi hiểu rồi, cảm ơn anh."
+
+
+def test_long_valid_translation_not_rejected() -> None:
+    """A long ascii-heavy VI sentence (romanized names + acronyms) must pass.
+
+    A previous length>400 guard false-rejected these — the 180-token cap already
+    bounds runaways, so no char-length ceiling is needed. This guards against it
+    being re-added.
+    """
+    from src.router_translator import _looks_like_refusal_or_echo
+    long_vi = "Fukase-san báo cáo DMAT rằng bệnh nhân tại CROSS-TENANT " * 9  # ~490 chars
+    assert not _looks_like_refusal_or_echo("元の文", long_vi), "long valid VI must not be rejected"
+
+
+def test_http_retry_only_on_retryable_status() -> None:
+    """400/401 fail fast (1 attempt); 429/5xx retry (2 attempts).
+
+    raise_for_status() raises HTTPError (a RequestException subclass); without
+    status classification, every 4xx wasted a second round-trip on the hot path.
+    """
+    import requests
+    import unittest.mock as _mock
+    t = _make_translator()
+    for code, want_attempts in ((400, 1), (401, 1), (429, 2), (500, 2), (503, 2)):
+        attempts = [0]
+
+        def post(*_a, code=code, **_k):
+            attempts[0] += 1
+            resp = _mock.Mock()
+            resp.status_code = code
+            resp.text = ""
+            resp.raise_for_status.side_effect = requests.HTTPError(response=resp)
+            return resp
+
+        t._session.post = post  # type: ignore[assignment]
+        t._post_with_retry([{"role": "user", "content": "x"}])
+        assert attempts[0] == want_attempts, f"HTTP {code}: {attempts[0]} attempts, want {want_attempts}"
+
+
 def test_filler_short_circuits(monkeypatch: "pytest.MonkeyPatch") -> None:
     """_translate_one must return filler result without calling _post_with_retry."""
     t = _make_translator()

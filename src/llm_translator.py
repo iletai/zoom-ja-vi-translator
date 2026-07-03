@@ -10,7 +10,7 @@ from collections import deque
 from typing import Any
 
 import config
-from src.domain_data import DOMAIN_TERMS, PROPER_NOUNS, KATAKANA_TERMS as _KATAKANA_SOURCE
+from src.domain_data import DOMAIN_TERMS, PROPER_NOUNS, KATAKANA_TERMS as _KATAKANA_SOURCE, match_filler as _match_filler, HARD_REFUSAL_PATTERNS as _HARD_REFUSAL_SOURCE
 from src.japanese_names import SURNAME_MAP, SURNAME_SET, KATAKANA_NAMES
 from src.sentence_aggregator import split_japanese_sentences
 
@@ -398,83 +398,6 @@ digit ::= [0-9]
             logger.warning("LLM translation failed for %r: %s", text, exc)
             return ""
 
-    # Hardcoded filler word translations (LLM struggles with these)
-    _FILLER_MAP = {
-        "うん": "Vâng",
-        "うんうん": "Vâng, vâng",
-        "うんうんはい": "Vâng, vâng, đúng rồi",
-        "うんうんうん": "Vâng vâng vâng",
-        "はい": "Vâng",
-        "はいはい": "Vâng, vâng",
-        "はいはいはい": "Vâng vâng vâng",
-        "はいもね": "Vâng, đúng nhỉ",
-        "ええ": "Vâng",
-        "え": "Ơ",
-        "えっと": "À...",
-        "あの": "À...",
-        "あのう": "À...",
-        "ああ": "À",
-        "あ": "À",
-        "まあ": "Thôi thì",
-        "なるほど": "Ra vậy",
-        "なるほどね": "Ra vậy nhỉ",
-        "そうですね": "Đúng vậy nhỉ",
-        "そうそう": "Đúng, đúng",
-        "そうそうそう": "Đúng đúng đúng",
-        "ですね": "Đúng vậy",
-        "っていう": "Nghĩa là",
-        "ます": "...",
-        "ねえ": "Này",
-        "ねえねえ": "Này này",
-        "うんねえねえ": "Vâng, này này",
-        # ─── Common meeting greetings/phrases (bypass LLM for reliability) ───
-        "こんにちは": "Xin chào",
-        "こんばんは": "Chào buổi tối",
-        "おはようございます": "Chào buổi sáng",
-        "お願いします": "Xin hãy giúp",
-        "お願いいたします": "Xin vui lòng",
-        "お世話になっております": "Cảm ơn đã luôn giúp đỡ",
-        "お世話になります": "Xin được nhờ vả",
-        "お疲れ様です": "Xin chào",
-        "お疲れ様でした": "Cảm ơn đã vất vả",
-        "よろしくお願いします": "Xin vui lòng hỗ trợ",
-        "よろしくお願いいたします": "Rất mong được hỗ trợ",
-        "ありがとうございます": "Cảm ơn",
-        "ありがとうございました": "Cảm ơn rất nhiều",
-        "先日は打ち合わせありがとうございました": "Cảm ơn về cuộc họp hôm trước",
-        "先日はありがとうございました": "Cảm ơn về hôm trước",
-        "いえいえこちらこそ": "Không không, bên tôi mới phải cảm ơn",
-        "いかがですか": "Thế nào ạ?",
-        "いかがでしょうか": "Thế nào ạ?",
-        "難しいですか": "Có khó không?",
-        "難しいと思います": "Tôi nghĩ là khó",
-        "すみません": "Xin lỗi",
-        "申し訳ございません": "Thành thật xin lỗi",
-        "失礼します": "Xin phép",
-        "失礼いたします": "Xin phép ạ",
-        "承知しました": "Tôi đã hiểu",
-        "了解です": "Đã hiểu",
-        "了解しました": "Đã hiểu rồi",
-        "かしこまりました": "Vâng, tôi hiểu",
-        "おっしゃる通りです": "Đúng như bạn nói",
-        "そういうことですね": "À ra là vậy",
-        "その通りです": "Đúng vậy",
-        "間違いないです": "Không sai",
-        "以上です": "Trên đây là tất cả",
-        "以上になります": "Trên đây là tất cả",
-        "みなさんこんにちは": "Xin chào mọi người",
-        "皆さんこんにちは": "Xin chào mọi người",
-        "では始めましょう": "Vậy chúng ta bắt đầu nhé",
-        "始めましょう": "Bắt đầu thôi",
-        "それでは": "Vậy thì",
-        "ちょっと待ってください": "Xin đợi một chút",
-        "少々お待ちください": "Xin vui lòng chờ một chút",
-        "聞こえますか": "Nghe được không?",
-        "見えますか": "Nhìn thấy không?",
-        "大丈夫です": "Không sao",
-        "問題ないです": "Không có vấn đề gì",
-    }
-
     # Keigo simplification: only grammatical-equivalence rewrites that don't
     # alter politeness register or request semantics.  Content-bearing honorific
     # forms (させていただく, おっしゃる, いらっしゃる, 存じます, etc.) are kept
@@ -568,24 +491,18 @@ digit ::= [0-9]
                 if before_ok and after_ok:
                     cleaned = cleaned.replace(kana, romaji)
 
-        # Check filler words first (no LLM needed)
-        filler_result = self._FILLER_MAP.get(cleaned)
-        # Prefix match for truncated fillers (ASR sometimes cuts final す/した)
-        if not filler_result:
-            for filler_key, filler_val in self._FILLER_MAP.items():
-                if filler_key.startswith(cleaned) and len(cleaned) >= len(filler_key) - 2:
-                    filler_result = filler_val
-                    break
+        # Check filler words first (no LLM needed). Shared matcher (exact +
+        # truncated-prefix) lives in domain_data so both backends stay in sync.
+        # NOT added to history — see router_translator: a deterministic filler
+        # short-circuit anchors no terminology and floods the context window.
+        filler_result = _match_filler(cleaned)
         if filler_result:
-            if update_context and self._keep_context:
-                self._history.append((cleaned, filler_result))
             return filler_result
 
-        # Check if entire input is a single katakana IT term
+        # Check if entire input is a single katakana IT term. Also deterministic
+        # (デプロイ always → "deploy"), so it too is left out of history.
         katakana_result = self._KATAKANA_TERM_MAP.get(cleaned)
         if katakana_result:
-            if update_context and self._keep_context:
-                self._history.append((cleaned, katakana_result))
             return katakana_result
 
         # Simplify keigo (honorific) patterns to plain form for cleaner translation.
@@ -613,7 +530,8 @@ digit ::= [0-9]
                 if nllb_result and nllb_result.strip():
                     result = self._fix_word_order(nllb_result.strip())
                     if update_context and self._keep_context:
-                        self._history.append((cleaned, result))
+                        with self._lock:
+                            self._history.append((cleaned, result))
                     logger.debug("NLLB fast-path: %r -> %r", cleaned[:40], result[:60])
                     return result
             except Exception as exc:
@@ -783,16 +701,7 @@ digit ::= [0-9]
         return "".join(parts)
 
     # Patterns that indicate LLM genuinely refused to translate (hard refusals)
-    _HARD_REFUSAL_PATTERNS = (
-        "tôi sẽ không dịch",
-        "tôi không thể dịch",
-        "tôi xin lỗi",
-        "nội dung nhạy cảm",
-        "không phù hợp",
-        "i cannot translate",
-        "i won't translate",
-        "i can't translate",
-    )
+    _HARD_REFUSAL_PATTERNS = _HARD_REFUSAL_SOURCE
 
     # Patterns that indicate LLM added a preamble/explanation wrapper.
     # These are stripped from the output; if nothing useful remains, retry kicks in.
