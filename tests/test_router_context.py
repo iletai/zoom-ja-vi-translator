@@ -289,3 +289,43 @@ def test_multi_sentence_context_off_parallel(monkeypatch: "pytest.MonkeyPatch") 
     assert len(call_count) == 2
     # Context is off — history must stay empty
     assert len(t._history) == 0
+
+
+# ── System-prompt structural invariants ────────────────────────────────────
+# The router prompt is load-bearing config refined over many iterations. These
+# assert the invariants stay intact through refactors — none call the model, so
+# they are fast and deterministic. A silent revert (which git-staging hazards
+# caused before) is caught here instead of only in a live meeting.
+
+def test_router_prompt_has_xml_section_structure() -> None:
+    import config
+    p = config._ROUTER_DEFAULT_PROMPT
+    assert "<rules>" in p and "</rules>" in p, "rules section lost"
+    assert "<examples>" in p and "</examples>" in p, "examples section lost"
+    # Sandwich defense must be the LAST instruction (recency anchor).
+    assert p.rstrip().endswith("next message."), "sandwich no longer last"
+    # Order: rules before examples before the Remember sandwich.
+    assert p.index("<rules>") < p.index("<examples>") < p.index("Remember:")
+
+
+def test_router_prompt_functional_word_rule_not_reverted() -> None:
+    """The content-fragment fix (verified live) must survive refactors.
+
+    ちょっと was removed from the 'content-free' list because it HAS meaning;
+    leaving it there made the model collapse content fragments like
+    ちょっとその件については to a bare '...'. Guard against a silent revert.
+    """
+    import config
+    p = config._ROUTER_DEFAULT_PROMPT
+    assert "content-free particle" in p, "functional-word fix reverted"
+    assert "single functional word" not in p, "old (buggy) wording is back"
+    # ちょっと must NOT be listed as a content-free particle.
+    particle_rule = p[p.index("content-free particle"):p.index("content-free particle") + 120]
+    assert "ちょっと" not in particle_rule, "ちょっと wrongly listed as content-free again"
+
+
+def test_router_prompt_keeps_core_rules() -> None:
+    import config
+    p = config._ROUTER_DEFAULT_PROMPT
+    for marker in ("ませんか", "自分", "Prior turns", "romaji", "one line"):
+        assert marker in p, f"core rule marker {marker!r} missing from prompt"

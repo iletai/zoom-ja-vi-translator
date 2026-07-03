@@ -130,6 +130,7 @@ def make_pipeline(utterances: list[str], log_name: str) -> tuple[TranslationPipe
     inst._segment_queue = queue.Queue(maxsize=64)
     inst._redecode_thread = None
     inst._draining = threading.Event()
+    inst._webhook_pool = None
     inst._last_enqueued_text = ""
     inst._last_enqueued_at = 0.0
     inst._capture = FakeCapture(utterances, inst._audio_queue, inst.stop_event)
@@ -175,6 +176,11 @@ def test_normal_stop_displays_every_enqueued_seq() -> None:
 def test_ctrl_c_stop_audits_mid_backlog_without_seq_gaps() -> None:
     utterances = [f"割り込み{i}です。" for i in range(1, 7)]
     pipe, display, log_path = make_pipeline([], "shutdown_ctrl_c.jsonl")
+    # Enqueue with no translate thread set yet: _enqueue_text treats an
+    # unstarted Thread (is_alive()==False) as dead and abandons the item. In
+    # production the worker is always running by enqueue time; None models that
+    # "consumer alive" state so the backlog actually queues.
+    pipe._translate_thread = None
     for utterance in utterances:
         TranslationPipeline._enqueue_text(pipe, utterance, pre_shown=True)
 

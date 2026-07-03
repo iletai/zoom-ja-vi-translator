@@ -1,0 +1,2 @@
+{"ts": "10:34:07", "t_ms": 856.1, "thread": "MainThread", "event": "session_start", "pid": 2417260}
+{"ts": "10:34:07", "t_ms": 856.9, "thread": "MainThread", "event": "enqueue", "seq": 1, "text": "割り込み1です。", "pre_shown": true, "queue_size": 0}

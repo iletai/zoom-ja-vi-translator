@@ -5,7 +5,11 @@ import queue
 import threading
 
 import numpy as np
-import soundcard as sc
+
+try:
+    import soundcard as sc
+except ImportError:  # optional native dep — device fns raise on use, but importing
+    sc = None        # this module (e.g. via src.pipeline in tests) must not fail.
 
 import config
 from src import evidence_log as ev

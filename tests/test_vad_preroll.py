@@ -30,13 +30,31 @@ class _ScriptedVad:
         return first != 0
 
 
+class _FakeWebrtcVad:
+    """Stand-in so VadSegmenter builds without the optional webrtcvad wheel."""
+
+    class Vad:
+        def __init__(self, aggressiveness: int) -> None:
+            self.aggressiveness = aggressiveness
+
+        def is_speech(self, pcm_bytes: bytes, sample_rate: int) -> bool:
+            return False
+
+
 def _make_segmenter(preroll_ms: int) -> "vad_mod.VadSegmenter":
     orig_pre = getattr(config, "VAD_PREROLL_MS", 0)
     config.VAD_PREROLL_MS = preroll_ms
+    # VadSegmenter.__init__ raises if webrtcvad is absent; the scripted VAD below
+    # replaces it, so patch in a stand-in just for construction (matches
+    # test_vad_mincut). The test's real VAD is _ScriptedVad, set after build.
+    orig_webrtcvad = vad_mod.webrtcvad
+    if vad_mod.webrtcvad is None:
+        vad_mod.webrtcvad = _FakeWebrtcVad
     try:
         seg = vad_mod.VadSegmenter()
     finally:
         config.VAD_PREROLL_MS = orig_pre
+        vad_mod.webrtcvad = orig_webrtcvad
     seg._vad = _ScriptedVad(int(config.VAD_AGGRESSIVENESS))
     return seg
 

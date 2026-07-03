@@ -11,8 +11,10 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import evidence_log as ev  # noqa: E402
-from src.pipeline import TranslationPipeline  # noqa: E402
 from src.translator import join_translations  # noqa: E402
+# NOTE: src.pipeline (which pulls in the native sherpa_onnx ASR dep) is imported
+# lazily inside make_stub — so the pure join_translations test below still runs
+# in environments without the ASR model installed.
 
 ARTIFACT_DIR = Path(__file__).resolve().parent / "_artifacts"
 
@@ -45,7 +47,11 @@ class RecordingDisplay:
         self.infos.append(message)
 
 
-def make_stub(log_path: Path) -> TranslationPipeline:
+def make_stub(log_path: Path):
+    import pytest
+    pytest.importorskip("sherpa_onnx", reason="pipeline needs the native ASR dep")
+    from src.pipeline import TranslationPipeline
+
     ev.close()
     ARTIFACT_DIR.mkdir(exist_ok=True)
     if log_path.exists():
@@ -78,13 +84,13 @@ def test_join_translations_keeps_empty_placeholder() -> None:
 
 def test_batch_empty_translation_attribution() -> None:
     log_path = ARTIFACT_DIR / "join_translations_empty.jsonl"
-    inst = make_stub(log_path)
+    inst = make_stub(log_path)  # skips here if sherpa_onnx is absent
     batch = [
         (1, "一つ目です。二つ目です。", True),
         (2, "三つ目です。", True),
     ]
 
-    TranslationPipeline._translate_and_display_batch(inst, batch)
+    type(inst)._translate_and_display_batch(inst, batch)
     events = read_events(log_path)
 
     targets = {seq: (vi, jp) for seq, vi, jp in inst.display.targets}

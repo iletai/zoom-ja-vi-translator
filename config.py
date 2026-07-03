@@ -548,10 +548,15 @@ LLM_SYSTEM_PROMPT = os.environ.get(
 # loudly at the gateway rather than shipping a real token in the repo.
 ROUTER_BASE_URL = os.environ.get("ZT_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1")
 ROUTER_API_KEY = os.environ.get("ZT_ROUTER_KEY", "")
-# Default sonnet, not haiku: haiku-4.5 ignores the translate-only prompt and
-# slips into assistant mode on spoken fragments — 部長 ("manager", calling the
-# boss) came back as "Vâng, tôi đây ạ", and most lines got a hallucinated
-# "Vâng/ạ" prefix. sonnet-4.6 obeys the prompt (部長→"Trưởng phòng") at ~+0.6s/seg.
+# Default sonnet, not haiku: historically haiku-4.5 ignored the translate-only
+# prompt and slipped into assistant mode on spoken fragments — 部長 ("manager",
+# calling the boss) came back as "Vâng, tôi đây ạ", and most lines got a
+# hallucinated "Vâng/ạ" prefix. sonnet-4.6 obeys the prompt at ~+0.6s/seg.
+# NOTE (2026-07-03, live-tested against the gateway): the current hardened prompt
+# (XML <rules>/<examples> sections, sandwich defense, 部長→Trưởng phòng few-shot)
+# fixed those haiku failures — haiku-4.5 now returns 部長→"Trưởng phòng" correctly
+# with no "Vâng" hallucination. So ZT_ROUTER_MODEL=claude-haiku-4-5 is a viable
+# cheaper/faster override now; sonnet stays the default as the safer choice.
 ROUTER_MODEL = os.environ.get("ZT_ROUTER_MODEL", "gh/claude-sonnet-4.6")
 # 0.0 (greedy): MT evidence (Peng et al. EMNLP 2023, arXiv:2303.13780) shows
 # translation quality degrades monotonically as temperature rises — translation
@@ -587,8 +592,10 @@ _ROUTER_DEFAULT_PROMPT = (
     "garbled. Never comment that the input is unclear or an ASR error — just "
     "translate the words literally. If the input trails off, let the Vietnamese "
     "trail off too (end with '...'); do not invent an ending. "
-    "If the entire input is a single functional word with no content "
-    "(ちょっと, ね, よ, か, が, は, を, に, も) output '...'\n"
+    "If the entire input is a single content-free particle "
+    "(ね, よ, か, が, は, を, に, も) output '...'. But if the input has any real "
+    "content (even a short lead-in like ちょっとその件は), translate it and let it "
+    "trail off — do NOT collapse a content fragment to bare '...'.\n"
     "- This is spoken meeting dialogue, not written text. Use natural spoken "
     "Vietnamese, keep the speaker's politeness: render Japanese keigo (です/ます, "
     "いただく, お願いします, いたします) with Vietnamese politeness markers (ạ, dạ, "

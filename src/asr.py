@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 
 import numpy as np
-import sherpa_onnx
 
 import config
 
@@ -22,6 +21,18 @@ class JapaneseASR:
     SILENCE_THRESHOLD = 1e-6
 
     def __init__(self) -> None:
+        # Imported lazily so `import src.pipeline` (and everything that transitively
+        # pulls it in — tests, --list-devices) does not require the native ONNX
+        # runtime unless ASR is actually constructed. Mirrors the llama_cpp / azure
+        # backends' optional-dependency pattern.
+        try:
+            import sherpa_onnx
+        except ImportError as exc:  # pragma: no cover - import guard
+            raise ImportError(
+                "sherpa-onnx is not installed. Install it with: "
+                "pip install sherpa-onnx"
+            ) from exc
+
         model_files = self._find_model_files(Path(config.ASR_MODEL_DIR))
 
         recognizer_kwargs: dict[str, object] = dict(

@@ -79,6 +79,8 @@ def make_stub(translator=None, display=None, maxsize=256) -> TranslationPipeline
     inst._seq_lock = threading.Lock()
     inst.stop_event = threading.Event()
     inst._draining = threading.Event()
+    inst._translate_thread = None
+    inst._webhook_pool = None
     inst._last_enqueued_text = ""
     inst._last_enqueued_at = 0.0
     inst.translator = translator or StubTranslator()
