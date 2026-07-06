@@ -164,6 +164,7 @@ class RouterTranslator:
                 "Content-Type": "application/json",
             }
         )
+        self._stopping = threading.Event()
         logger.info("RouterTranslator → %s (model=%s)", self.url, self.model)
 
         # Prime the TLS connection + model now so the first LIVE segment isn't
@@ -225,7 +226,13 @@ class RouterTranslator:
             logger.warning("RouterTranslator warmup failed: %s", exc)
 
     def close(self) -> None:
-        """Release the pooled HTTP connections (call on pipeline shutdown)."""
+        """Release the pooled HTTP connections (call on pipeline shutdown).
+        
+        Setting ``_stopping`` prevents any new or in-flight method from making
+        additional HTTP requests, so the process can exit without lingering
+        background API calls after the user hits Ctrl+C.
+        """
+        self._stopping.set()
         try:
             self._session.close()
         except Exception:  # noqa: BLE001 - best-effort
@@ -263,6 +270,8 @@ class RouterTranslator:
         return out
 
     def _translate_one(self, text: str, update_context: bool = True) -> str:
+        if self._stopping.is_set():
+            return ""
         cleaned = (text or "").strip()
         if not cleaned:
             return ""
@@ -368,6 +377,8 @@ class RouterTranslator:
         return messages
 
     def _post_with_retry(self, messages: list[dict[str, str]]) -> str:
+        if self._stopping.is_set():
+            return ""
         body = {
             "model": self.model,
             "messages": messages,

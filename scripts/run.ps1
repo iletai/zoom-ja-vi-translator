@@ -11,6 +11,7 @@
 #   ./run.ps1 -Mic            # capture microphone instead of system audio
 #   ./run.ps1 -Log            # enable evidence logging to JSONL
 #   ./run.ps1 -Streaming      # use streaming ASR (lower latency)
+#   ./run.ps1 -Overlay        # show subtitles in a transparent always-on-top window (over Zoom)
 
 param(
     [switch]$ListDevices,
@@ -19,6 +20,7 @@ param(
     [switch]$Nllb,
     [switch]$Router,
     [switch]$Streaming,
+    [switch]$Overlay,
     [string]$Model = ""
 )
 
@@ -85,7 +87,14 @@ if ($Router) {
 
     $routerBase = if ($env:ZT_ROUTER_BASE_URL) { $env:ZT_ROUTER_BASE_URL } else { "http://127.0.0.1:20128/v1" }
     $routerKey = if ($env:ZT_ROUTER_KEY) { $env:ZT_ROUTER_KEY } else { "sk_9router" }
-    $alive = python -c "import requests,sys; sys.exit(0 if requests.get('$routerBase/models', headers={'Authorization':'Bearer $routerKey'}, timeout=3).ok else 1)" 2>$null
+    $alive = python -c @"
+import requests,sys
+try:
+    r = requests.get('$routerBase/models', headers={'Authorization':'Bearer $routerKey'}, timeout=3)
+    sys.exit(0 if r.ok else 1)
+except Exception:
+    sys.exit(1)
+"@ 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [warn] 9router not reachable at $routerBase - start it first. Pipeline will fall back to NLLB on init failure." -ForegroundColor Red
     } else {
@@ -142,6 +151,7 @@ if (-not $ListDevices) {
 # ─── Run ──────────────────────────────────────────────────────────────────
 $mainArgs = @()
 if ($Streaming) { $mainArgs += "--streaming" }
+if ($Overlay) { $mainArgs += "--overlay" }
 
 if ($ListDevices) {
     python main.py --list-devices

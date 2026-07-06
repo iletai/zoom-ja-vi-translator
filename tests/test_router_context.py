@@ -322,6 +322,11 @@ def test_router_prompt_functional_word_rule_not_reverted() -> None:
     # ちょっと must NOT be listed as a content-free particle.
     particle_rule = p[p.index("content-free particle"):p.index("content-free particle") + 120]
     assert "ちょっと" not in particle_rule, "ちょっと wrongly listed as content-free again"
+    # か must NOT be a content-free particle — it is a question marker. Leaving it
+    # in the list made the model collapse でしょうか/ですか to bare '...' (seen 3×
+    # in a real session). The rule must instead route question-enders to a question.
+    assert "か" not in particle_rule, "か wrongly listed as content-free (collapses でしょうか)"
+    assert "でしょうか" in p and "question-ender" in p.lower(), "question-ender rule missing"
 
 
 def test_router_prompt_keeps_core_rules() -> None:

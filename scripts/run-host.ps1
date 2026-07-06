@@ -22,6 +22,8 @@
 param(
     [switch]$Demo,
     [switch]$Mic,
+    [switch]$Overlay,
+    [switch]$AutoStart,
     [switch]$ListDevices,
     [int]$Port = 8770,
     [string]$Model = ""
@@ -94,7 +96,14 @@ $routerBase = if ($env:ZT_ROUTER_BASE_URL) { $env:ZT_ROUTER_BASE_URL } else { "h
 
 # --- Probe the gateway so failures are obvious up front -------------------
 $routerKey = if ($env:ZT_ROUTER_KEY) { $env:ZT_ROUTER_KEY } else { "sk_9router" }
-$probe = "import requests,sys; sys.exit(0 if requests.get('$routerBase/models', headers={'Authorization':'Bearer $routerKey'}, timeout=3).ok else 1)"
+$probe = @"
+import requests,sys
+try:
+    r = requests.get('$routerBase/models', headers={'Authorization':'Bearer $routerKey'}, timeout=3)
+    sys.exit(0 if r.ok else 1)
+except Exception:
+    sys.exit(1)
+"@
 try { python -c $probe 2>$null } catch {}
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [warn] 9router not reachable at $routerBase - start it first, or the host falls back to scripted text." -ForegroundColor Red
@@ -113,18 +122,27 @@ $audioMode = if ($Demo) { "Demo (scripted Japanese, no audio)" }
              elseif ($Mic) { "Microphone" }
              else { "System audio (WASAPI loopback)" }
 $asrMode = if ($Demo) { "(disabled in demo)" } else { "ReazonSpeech k2-v2 (local)" }
+$overlayMode = if ($Overlay) { "Transparent overlay ON" } else { "Off" }
+$autoStartMode = if ($AutoStart) { "ON (auto-starts on browser connect)" } else { "Off (click start in UI)" }
 Write-Host ""
 Write-Host "  Speaksy Web UI Host" -ForegroundColor Cyan
 Write-Host "  -------------------" -ForegroundColor DarkGray
 Write-Host "  Translator : 9router -> $routerModel" -ForegroundColor White
 Write-Host "  ASR        : $asrMode" -ForegroundColor White
 Write-Host "  Audio      : $audioMode" -ForegroundColor White
+Write-Host "  Overlay    : $overlayMode" -ForegroundColor White
+Write-Host "  Auto-start : $autoStartMode" -ForegroundColor White
 Write-Host "  UI         : http://127.0.0.1:$Port" -ForegroundColor White
+$autoMsg = if ($AutoStart -or $Overlay -or $Demo) { ", translation starts automatically." } else { ", then click the start button." }
 Write-Host ""
-Write-Host "  Open the URL above in a browser, then click the start button." -ForegroundColor DarkGray
+Write-Host "  Open the URL above in a browser$autoMsg" -ForegroundColor DarkGray
 Write-Host ""
 
 # --- Run the host ---------------------------------------------------------
 # -Mic flips the real engine from loopback to the default microphone.
 if ($Mic) { $env:ZT_HOST_MIC = "1" }
-python webui\host_server.py --host 127.0.0.1 --port $Port @args
+if ($Overlay) { $env:ZT_HOST_OVERLAY = "1" }
+$extraArgs = @("--host", "127.0.0.1", "--port", "$Port")
+if ($Overlay) { $extraArgs += "--overlay" }
+if ($AutoStart) { $extraArgs += "--auto-start" }
+python webui\host_server.py @extraArgs

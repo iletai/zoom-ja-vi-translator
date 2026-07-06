@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import concurrent.futures
 import hashlib
 import json
 import logging
@@ -33,12 +34,36 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from src.display import SubtitleDisplay
 
 logger = logging.getLogger("speaksy.host")
+
+# Module-level webhook executor + stop guard (shared across engines).
+_webhook_pool: concurrent.futures.ThreadPoolExecutor | None = None
+_webhook_stop = threading.Event()
+
+
+def _ensure_webhook_pool() -> None:
+    global _webhook_pool
+    if _webhook_pool is None:
+        _webhook_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="webhook",
+        )
+
+
+def _shutdown_webhook() -> None:
+    global _webhook_pool
+    _webhook_stop.set()
+    if _webhook_pool is not None:
+        # Wait for in-flight POSTs to complete (they check _webhook_stop
+        # and will abort if not yet started). Each POST has a hard timeout
+        # of ZT_WEBHOOK_TIMEOUT (default 5s), so this blocks at most ~5 s.
+        _webhook_pool.shutdown(wait=True)
+        _webhook_pool = None
+
 
 _ROOT = Path(__file__).resolve().parent.parent
 _UI_FILE = Path(__file__).resolve().parent / "rd_ui_v1.1.html"
@@ -160,7 +185,14 @@ async def translate_ja_vi(text: str, fallback: str) -> str:
 
 
 def _fire_webhook(_session_id: str, seq: int, japanese: str, vietnamese: str) -> None:
-    """POST one translated pair to the webhook URL configured in ZT_WEBHOOK_URL."""
+    """POST one translated pair to the webhook (fire-and-forget, pooled).
+
+    Guards against spam after shutdown via ``_webhook_stop`` and limits
+    concurrent in-flight POSTs to 2 so a slow/flapping gateway never
+    accumulates an unbounded thread backlog.
+    """
+    if _webhook_stop.is_set():
+        return
     url = os.environ.get("ZT_WEBHOOK_URL", "")
     if not url:
         return
@@ -191,6 +223,8 @@ def _fire_webhook(_session_id: str, seq: int, japanese: str, vietnamese: str) ->
     proxies = {"https": proxy_url, "http": proxy_url} if proxy_url else {}
 
     def _post() -> None:
+        if _webhook_stop.is_set():
+            return
         try:
             import requests as _req
             s = _req.Session()
@@ -201,7 +235,9 @@ def _fire_webhook(_session_id: str, seq: int, japanese: str, vietnamese: str) ->
         except Exception as exc:  # noqa: BLE001
             logger.warning("Webhook POST failed seq=%d: %s", seq, exc)
 
-    threading.Thread(target=_post, daemon=True).start()
+    _ensure_webhook_pool()
+    if _webhook_pool is not None:
+        _webhook_pool.submit(_post)
 
 
 class _DemoEngine:
@@ -213,13 +249,15 @@ class _DemoEngine:
     periodic ``engine/status`` so the UI's RTF/latency/EQ indicators animate.
     """
 
-    def __init__(self, conn: "Connection", from_lang: str, to_lang: str):
+    def __init__(self, conn: "Connection", from_lang: str, to_lang: str,
+                 file_log: _FileLogDisplay | None = None):
         self._conn = conn
         self._from = from_lang
         self._to = to_lang
         self._task: asyncio.Task | None = None
         self._session_id = str(__import__("uuid").uuid4())
         self._seq = 0
+        self._file_log = file_log
 
     def start(self) -> None:
         self._task = asyncio.ensure_future(self._run())
@@ -256,6 +294,8 @@ class _DemoEngine:
                 self._seq += 1
                 if dst:
                     _fire_webhook(self._session_id, self._seq, src, dst)
+                if self._file_log is not None:
+                    self._file_log.show_pair(src, dst)
 
                 await self._conn.send({
                     "type": "engine/status",
@@ -281,6 +321,104 @@ class _DemoEngine:
                 "segmentEnd": segment_end,
             },
         })
+
+
+class _FileLogDisplay:
+    """Saves every completed bilingual segment to a JSONL file for history.
+
+    Implements the same SubtitleDisplay duck-type so it can be added to
+    a ``_MultiDisplay`` chain alongside ``WsDisplay`` and ``OverlayDisplay``.
+    Only ``show_target`` / ``show_pair`` actually write — the other methods
+    are no-ops (they handle partials / source-only updates).
+    """
+
+    def __init__(self, session_id: str, log_dir: str | None = None) -> None:
+        if log_dir is None:
+            log_dir = os.environ.get("ZT_HISTORY_DIR", "")
+        if not log_dir:
+            log_dir = str(Path.home() / ".speaksy" / "history")
+        self._log_dir = Path(log_dir)
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        self._path = self._log_dir / f"session-{ts}-{session_id[:16]}.jsonl"
+        self._file = open(self._path, "w", encoding="utf-8")
+        logger.info("History log → %s", self._path)
+
+    def _write(self, japanese: str, vietnamese: str) -> None:
+        record = {
+            "tsMs": _now_ms(),
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+            "srcText": japanese,
+            "dstText": vietnamese,
+        }
+        self._file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._file.flush()
+
+    # ── SubtitleDisplay surface ─────────────────────────────────────────
+    def show(self, japanese: str, vietnamese: str) -> None:
+        self._write(japanese, vietnamese)
+
+    def show_pair(self, japanese: str, vietnamese: str) -> None:
+        self._write(japanese, vietnamese)
+
+    def show_target(self, vietnamese: str, japanese: str | None = None,
+                    seq: int | None = None) -> None:
+        self._write(japanese or "", vietnamese)
+
+    def show_source(self, japanese: str, seq: int | None = None) -> None:
+        pass  # partial / source-only — not a completed segment
+
+    def show_source_partial(self, committed: str, tail: str = "") -> None:
+        pass
+
+    def finalize_source(self, japanese: str) -> None:
+        pass
+
+    def info(self, message: str) -> None:
+        pass
+
+    def close(self) -> None:
+        try:
+            self._file.close()
+            logger.info("History log closed: %s", self._path)
+        except Exception:
+            pass
+
+
+class _MultiDisplay:
+    """Fans out SubtitleDisplay calls to multiple displays (e.g. WS + overlay + file log)."""
+
+    def __init__(self, *displays):
+        self._displays = displays
+
+    def show_source(self, japanese: str, seq: int | None = None) -> None:
+        for d in self._displays:
+            d.show_source(japanese, seq=seq)
+
+    def show_source_partial(self, committed: str, tail: str = "") -> None:
+        for d in self._displays:
+            d.show_source_partial(committed, tail)
+
+    def finalize_source(self, japanese: str) -> None:
+        for d in self._displays:
+            d.finalize_source(japanese)
+
+    def show_target(self, vietnamese: str, japanese: str | None = None,
+                    seq: int | None = None) -> None:
+        for d in self._displays:
+            d.show_target(vietnamese, japanese=japanese, seq=seq)
+
+    def show_pair(self, japanese: str, vietnamese: str) -> None:
+        for d in self._displays:
+            d.show_pair(japanese, vietnamese)
+
+    def show(self, japanese: str, vietnamese: str) -> None:
+        for d in self._displays:
+            d.show(japanese, vietnamese)
+
+    def info(self, message: str) -> None:
+        for d in self._displays:
+            d.info(message)
 
 
 class WsDisplay:  # structurally satisfies SubtitleDisplay (duck-typed)
@@ -315,7 +453,7 @@ class WsDisplay:  # structurally satisfies SubtitleDisplay (duck-typed)
         self._emit(self._conn.send(obj))
 
     # ---- SubtitleDisplay surface used by the pipeline ---------------------- #
-    def show_source(self, japanese: str, _seq: int | None = None) -> None:
+    def show_source(self, japanese: str, seq: int | None = None) -> None:  # noqa: ARG002 - matches SubtitleDisplay interface (pipeline calls seq=...)
         self._last_src = japanese or ""
         self._send({
             "type": "engine/subtitle",
@@ -334,7 +472,7 @@ class WsDisplay:  # structurally satisfies SubtitleDisplay (duck-typed)
     def finalize_source(self, japanese: str) -> None:
         self._last_src = japanese or self._last_src
 
-    def show_target(self, vietnamese: str, japanese: str | None = None, _seq: int | None = None) -> None:
+    def show_target(self, vietnamese: str, japanese: str | None = None, seq: int | None = None) -> None:  # noqa: ARG002 - matches SubtitleDisplay interface (pipeline calls seq=...)
         src = japanese if japanese is not None else self._last_src
         self._send({
             "type": "engine/subtitle",
@@ -369,12 +507,15 @@ class _RealEngine:
     instead of crashing the host.
     """
 
-    def __init__(self, conn: "Connection", from_lang: str, to_lang: str, device_id: str):
+    def __init__(self, conn: "Connection", from_lang: str, to_lang: str, device_id: str,
+                 overlay_display: Any | None = None, file_log: _FileLogDisplay | None = None):
         self._conn = conn
         self._from = from_lang
         self._to = to_lang
         self._device_id = device_id
         self._loop = asyncio.get_running_loop()
+        self._overlay_display = overlay_display
+        self._file_log = file_log
         self._pipeline = None
         self._thread: threading.Thread | None = None
 
@@ -405,7 +546,14 @@ class _RealEngine:
             return
         try:
             device = self._resolve_device(audio_capture)
-            display = WsDisplay(self._conn, self._loop)
+            display: Any = WsDisplay(self._conn, self._loop)
+            extra: list[Any] = []
+            if self._overlay_display is not None:
+                extra.append(self._overlay_display)
+            if self._file_log is not None:
+                extra.append(self._file_log)
+            if extra:
+                display = _MultiDisplay(display, *extra)
             # Prefer the low-latency streaming recognizer, but only if its model
             # is present — otherwise fall back to the offline recognizer
             # (ReazonSpeech), which ships with the default model download. This
@@ -462,12 +610,18 @@ def _now_ms() -> int:
 class Connection:
     """One browser tab: frames in, JSON messages out, protocol dispatch."""
 
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+                 overlay_display: Any | None = None, auto_start: bool = False,
+                 enable_history: bool = False):
         self._reader = reader
         self._writer = writer
         self._write_lock = asyncio.Lock()
         self._engine: "_DemoEngine | _RealEngine | None" = None
         self._running = False
+        self._overlay_display = overlay_display
+        self._auto_start = auto_start
+        self._enable_history = enable_history
+        self._file_log: _FileLogDisplay | None = None
 
     # ---- outbound ---------------------------------------------------------- #
     async def send(self, obj: dict) -> None:
@@ -501,10 +655,16 @@ class Connection:
         if self._engine is not None:
             await self._engine.stop()
             self._engine = None
+        self._close_file_log()
         try:
             self._writer.close()
         except Exception:  # noqa: BLE001
             pass
+
+    def _close_file_log(self) -> None:
+        if self._file_log is not None:
+            self._file_log.close()
+            self._file_log = None
 
     # ---- protocol ---------------------------------------------------------- #
     async def _dispatch(self, raw: str) -> None:
@@ -519,6 +679,12 @@ class Connection:
         if mtype == "ui/ready":
             await self._send_status(state="Idle")
             await self._send_devices()
+            # Auto-start the engine immediately. The browser auto-creates
+            # a session on the first segmentEnd it receives (see frontend
+            # engine/subtitle handler) — no need for a handshake.
+            if self._auto_start:
+                self._auto_start = False
+                await self._on_start({"fromLang": "ja", "toLang": "vi", "inputDeviceId": ""})
         elif mtype == "engine/listDevices":
             await self._send_devices()
         elif mtype == "engine/start":
@@ -531,7 +697,11 @@ class Connection:
                 "payload": {"ok": True, "message": "デバイスは利用可能です（demo host）。"},
             })
         elif mtype == "ui/textSnapshot":
-            pass  # step 2: persist snapshot to disk for file-output trigger
+            if self._file_log is not None and payload:
+                self._file_log.show_target(
+                    payload.get("liveDst") or payload.get("bufDst") or "",
+                    japanese=payload.get("liveSrc") or payload.get("bufSrc") or "",
+                )
         else:
             logger.debug("unhandled message type: %s", mtype)
 
@@ -560,19 +730,30 @@ class Connection:
         to_lang = str(payload.get("toLang") or "vi")
         device_id = str(payload.get("inputDeviceId") or "")
         self._running = True
+
+        # Create file log for history persistence (if enabled)
+        self._close_file_log()  # ensure no stale file log from prior session
+        if self._enable_history:
+            session_id = str(__import__("uuid").uuid4())
+            self._file_log = _FileLogDisplay(session_id)
+
         # ZT_HOST_REAL=1 opts into the real audio→ASR→translate pipeline (needs a
         # capture device + ASR deps — i.e. a Windows/macOS box, not headless WSL).
         # Anywhere else, the scripted engine drives real 9router translation.
         if os.environ.get("ZT_HOST_REAL") == "1":
-            self._engine = _RealEngine(self, from_lang, to_lang, device_id)
+            self._engine = _RealEngine(self, from_lang, to_lang, device_id,
+                                       overlay_display=self._overlay_display,
+                                       file_log=self._file_log)
         else:
-            self._engine = _DemoEngine(self, from_lang, to_lang)
+            self._engine = _DemoEngine(self, from_lang, to_lang,
+                                       file_log=self._file_log)
         self._engine.start()
 
     async def _on_stop(self) -> None:
         if self._engine is not None:
             await self._engine.stop()
             self._engine = None
+        self._close_file_log()
         self._running = False
         await self._send_status(state="Idle")
 
@@ -634,7 +815,9 @@ async def _read_message(reader: asyncio.StreamReader) -> str | None:
 # --------------------------------------------------------------------------- #
 
 
-async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+                  overlay_display: Any | None = None, auto_start: bool = False,
+                  enable_history: bool = False) -> None:
     try:
         request_line = await reader.readline()
         if not request_line:
@@ -660,7 +843,8 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
 
         if headers.get("upgrade", "").lower() == "websocket":
             await _do_handshake(writer, headers)
-            await Connection(reader, writer).serve()
+            await Connection(reader, writer, overlay_display=overlay_display,
+                             auto_start=auto_start, enable_history=enable_history).serve()
             return
 
         await _serve_http(writer, method, path)
@@ -686,6 +870,60 @@ async def _do_handshake(writer: asyncio.StreamWriter, headers: dict[str, str]) -
     await writer.drain()
 
 
+def _load_history_sessions() -> list[dict]:
+    """Read all JSONL history files and return them as session objects.
+
+    Each JSONL file = one session. The frontend session format is preserved
+    so the UI can render these seamlessly alongside localStorage sessions.
+    """
+    log_dir = Path(os.environ.get("ZT_HISTORY_DIR", "")) or Path.home() / ".speaksy" / "history"
+    if not log_dir.is_dir():
+        return []
+    sessions: list[dict] = []
+    for fpath in sorted(log_dir.glob("session-*.jsonl"), reverse=True):
+        segments: list[dict] = []
+        start_ts = 0
+        end_ts = 0
+        try:
+            for line in fpath.read_text(encoding="utf-8").strip().splitlines():
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                ts = int(rec.get("tsMs", 0))
+                if not start_ts or ts < start_ts:
+                    start_ts = ts
+                if ts > end_ts:
+                    end_ts = ts
+                seg_id = rec.get("id") or f"seg-{ts}-{hash(line) & 0xFFFF_FFFF:08x}"
+                segments.append({
+                    "id": seg_id, "tsMs": ts,
+                    "srcText": rec.get("srcText", ""),
+                    "dstText": rec.get("dstText", ""),
+                    "reason": rec.get("reason", "segmentEnd"),
+                })
+        except Exception as exc:
+            logger.warning("Skipping corrupt history file %s: %s", fpath.name, exc)
+            continue
+        if not segments:
+            continue
+        stem = fpath.stem  # session-20250706-103000-uuid
+        # Extract session id from filename, or generate one.
+        suffix = stem[len("session-"):]  # "20250706-103000-uuid"
+        sess_id = f"sess-file-{suffix}"
+        sessions.append({
+            "id": sess_id,
+            "startTsMs": start_ts,
+            "endTsMs": end_ts or start_ts,
+            "fromLang": "ja",
+            "toLang": "vi",
+            "status": "done",
+            "errorMessage": None,
+            "metrics": {"rtfSamples": [], "latencySamples": []},
+            "transcript": segments,
+        })
+    return sessions
+
+
 async def _serve_http(writer: asyncio.StreamWriter, _method: str, path: str) -> None:
     clean = path.split("?", 1)[0]
     if clean in ("/", "/index.html", "/rd_ui_v1.1.html"):
@@ -693,6 +931,10 @@ async def _serve_http(writer: asyncio.StreamWriter, _method: str, path: str) -> 
         _write_response(writer, 200, "text/html; charset=utf-8", body)
     elif clean == "/healthz":
         _write_response(writer, 200, "text/plain; charset=utf-8", b"ok")
+    elif clean == "/api/history":
+        sessions = _load_history_sessions()
+        body = json.dumps(sessions, ensure_ascii=False).encode("utf-8")
+        _write_response(writer, 200, "application/json; charset=utf-8", body)
     else:
         _write_response(writer, 404, "text/plain; charset=utf-8", b"not found")
     await writer.drain()
@@ -710,15 +952,29 @@ def _write_response(writer: asyncio.StreamWriter, status: int, content_type: str
     writer.write(head.encode("latin-1") + body)
 
 
-async def _main(host: str, port: int) -> None:
-    if not _UI_FILE.exists():
-        raise SystemExit(f"UI file not found: {_UI_FILE}")
-    server = await asyncio.start_server(_handle, host, port)
+async def _main(host: str, port: int, overlay: bool = False, auto_start: bool = False,
+                history: bool = False) -> None:
+    overlay_display: Any = None
+    if overlay:
+        try:
+            from src.overlay_display import OverlayDisplay
+            overlay_display = OverlayDisplay()
+            logger.info("Overlay display created")
+        except Exception as exc:
+            logger.warning("Overlay unavailable: %s", exc)
+
+    server = await asyncio.start_server(
+        lambda r, w: _handle(r, w, overlay_display=overlay_display,
+                             auto_start=auto_start, enable_history=history),
+        host, port,
+    )
     addr = ", ".join(str(s.getsockname()) for s in server.sockets)
     logger.info("Speaksy host serving UI + WS on http://%s:%d  (sockets: %s)", host, port, addr)
     print(f"==> Speaksy host ready → http://{host}:{port}")
     async with server:
         await server.serve_forever()
+    if overlay_display is not None:
+        overlay_display.close()
 
 
 def main() -> int:
@@ -726,6 +982,9 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8770, help="port (default: 8770)")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
+    parser.add_argument("--overlay", action="store_true", help="show transparent subtitle overlay window")
+    parser.add_argument("--auto-start", action="store_true", help="start engine automatically on WS connect")
+    parser.add_argument("--history", action="store_true", help="save subtitle history to disk (JSONL)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -733,9 +992,12 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     try:
-        asyncio.run(_main(args.host, args.port))
+        asyncio.run(_main(args.host, args.port, overlay=args.overlay,
+                          auto_start=args.auto_start, history=args.history))
     except KeyboardInterrupt:
         print("\n==> Speaksy host stopped.")
+    finally:
+        _shutdown_webhook()
     return 0
 
 

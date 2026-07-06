@@ -100,6 +100,7 @@ class TranslationPipeline:
             if os.environ.get("ZT_WEBHOOK_URL")
             else None
         )
+        self._webhook_stop = threading.Event()
 
         if self.cloud:
             self.display.info(f"Connecting to cloud backend ({backend})...")
@@ -628,7 +629,7 @@ class TranslationPipeline:
         Sends thread_id from the first response so the Flow can route subsequent
         messages as replies in-thread instead of new posts.
         """
-        if self._webhook_pool is None:
+        if self._webhook_pool is None or self._webhook_stop.is_set():
             return
         url = os.environ.get("ZT_WEBHOOK_URL", "")
         if not url:
@@ -659,6 +660,8 @@ class TranslationPipeline:
         }
 
         def _post() -> None:
+            if self._webhook_stop.is_set():
+                return
             try:
                 import requests as _req
                 s = _req.Session()
@@ -802,6 +805,10 @@ class TranslationPipeline:
             self.stop(flush_tail=not interrupted)
 
     def stop(self, flush_tail: bool = True) -> None:
+        # Prevent new webhook POSTs immediately — in-flight ones check this
+        # flag before making their HTTP call.
+        self._webhook_stop.set()
+
         if self._redecode:
             # Permit the re-decode worker's drained tail utterances to keep
             # enqueueing past stop_event during the orderly shutdown below.
@@ -815,7 +822,7 @@ class TranslationPipeline:
             self._asr_thread.join(timeout=2.0)
             self.cloud_translator.stop()
             if self._webhook_pool is not None:
-                self._webhook_pool.shutdown(wait=False)
+                self._webhook_pool.shutdown(wait=True)
             return
 
         # Join workers first so the non-thread-safe segmenter/ASR/translator are
@@ -841,7 +848,7 @@ class TranslationPipeline:
         self._translate_thread.join(timeout=config.WORKER_SHUTDOWN_TIMEOUT)
 
         if self._webhook_pool is not None:
-            self._webhook_pool.shutdown(wait=False)
+            self._webhook_pool.shutdown(wait=True)
 
         # Release the translator's resources (Router's pooled HTTP session);
         # NLLB/LLM have no close(), so guard with getattr.

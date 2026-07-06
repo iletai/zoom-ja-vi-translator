@@ -1867,6 +1867,28 @@
 
       useEffect(() => { saveJson("speaksy.sessions", sessions); }, [sessions]);
 
+      // load server-side history (JSONL files) and merge into sessions
+      useEffect(() => {
+        if (!HostBridge.hasHost()) return;
+        fetch("/api/history").then(r => r.json()).then(serverSessions => {
+          if (!Array.isArray(serverSessions) || !serverSessions.length) return;
+          setSessions(prev => {
+            const existing = new Set(prev.map(s => s.id));
+            const merged = [...prev];
+            for (const s of serverSessions) {
+              if (!existing.has(s.id)) {
+                // keep transcript ordering consistent (file order = chronological)
+                merged.push(s);
+                existing.add(s.id);
+              }
+            }
+            // sort newest-first by startTsMs
+            merged.sort((a, b) => (b.startTsMs || 0) - (a.startTsMs || 0));
+            return merged.slice(0, 200);
+          });
+        }).catch(() => {});
+      }, []);
+
       // settings forbidden while running
       useEffect(() => {
         if (running && page === "settings") setPage("translate");
@@ -2099,8 +2121,24 @@
             const take = partialResults ? true : !partial;
             if (!take) return;
 
-            if (segmentEnd && activeSessionId) {
-              pushTranscript(activeSessionId, {
+            if (segmentEnd) {
+              // Auto-create session on first segment (--auto-start path)
+              // so the journal populates even before React re-renders.
+              let sid = activeSessionId;
+              if (!sid) {
+                const now = Date.now();
+                sid = `sess-${now}-${Math.random().toString(16).slice(2)}`;
+                setSessions(prev => [{
+                  id: sid, startTsMs: now, endTsMs: null,
+                  fromLang, toLang, inputDeviceId,
+                  status: "running", errorMessage: null,
+                  metrics: { rtfSamples: [], latencySamples: [] },
+                  transcript: []
+                }, ...prev].slice(0, 200));
+                setActiveSessionId(sid);
+                setSelectedSessionId(sid);
+              }
+              pushTranscript(sid, {
                 id: `seg-${ts}-${Math.random().toString(16).slice(2)}`,
                 tsMs: ts,
                 srcText,

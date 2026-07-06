@@ -32,7 +32,6 @@ if sys.platform == "win32":
 
 import config
 from src import audio_capture
-from src.display import SubtitleDisplay
 
 # Monkeypatch soundcard.mediafoundation to suppress "data discontinuity" warnings
 # reliably (standard filter doesn't work from background audio threads).
@@ -105,6 +104,12 @@ def parse_args() -> argparse.Namespace:
         "(asr/aggregator/enqueue/queue_drop/dedup_skip/translate/display) for "
         "debugging dropped data. Defaults to test_audio/evidence/run_<ts>.jsonl "
         "when given with no path. Also enabled via ZT_EVIDENCE_LOG=<path>.",
+    )
+    parser.add_argument(
+        "--overlay",
+        action="store_true",
+        help="show translated subtitles in a transparent always-on-top window "
+        "instead of the terminal (requires a display server / GUI environment)",
     )
     return parser.parse_args()
 
@@ -250,7 +255,18 @@ def _save_transcript(log_path, display: SubtitleDisplay) -> None:
 
 def main() -> int:
     args = parse_args()
-    display = SubtitleDisplay()
+    if args.overlay:
+        try:
+            from src.overlay_display import OverlayDisplay
+            display = OverlayDisplay()
+        except (ImportError, RuntimeError) as exc:
+            print(f"[warn] Overlay display unavailable: {exc}", file=sys.stderr)
+            print("[warn] Falling back to terminal display.", file=sys.stderr)
+            from src.display import SubtitleDisplay
+            display = SubtitleDisplay()
+    else:
+        from src.display import SubtitleDisplay
+        display = SubtitleDisplay()
 
     if args.list_devices:
         audio_capture.list_devices()
