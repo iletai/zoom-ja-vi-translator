@@ -574,6 +574,42 @@ class TranslationPipeline:
     def _translate_and_display_batch(self, batch: list[tuple[int, str, bool]]) -> None:
         started = monotonic()
         logger.debug("Translating batch of %d item(s)", len(batch))
+
+        # Fast path: single-item batch through RouterTranslator — stream tokens
+        # directly to the display so the first Vietnamese word appears within
+        # ~300ms instead of waiting for the full response (~1.5s). The completed
+        # full text is still passed through _clean / refusal filter before commit.
+        if (
+            len(batch) == 1
+            and hasattr(self.translator, "_post_streaming")
+            and hasattr(self.display, "show_target_partial")
+        ):
+            seq, japanese, pre_shown = batch[0]
+            accumulated: list[str] = []
+            def _on_token(chunk: str) -> None:
+                accumulated.append(chunk)
+                self.display.show_target_partial("".join(accumulated))
+            try:
+                vietnamese = self.translator.translate(japanese, on_token=_on_token).strip()  # type: ignore[call-arg]
+            except Exception as exc:
+                logger.error("Streaming translate failed seq=%d: %s", seq, exc)
+                vietnamese = ""
+            latency_ms = round((monotonic() - started) * 1000.0, 1)
+            logger.info("Translated batch(1,stream) in %.1fms", latency_ms)
+            ev.log("translate", seq=seq, jp=japanese, vi=vietnamese,
+                   latency_ms=latency_ms, batch=1, streaming=True)
+            try:
+                if pre_shown:
+                    self.display.show_target(vietnamese or "(...)", japanese=japanese, seq=seq)
+                else:
+                    self.display.show_pair(japanese, vietnamese or "(...)")
+                ev.log("display", seq=seq, pre_shown=pre_shown, jp=japanese, vi=vietnamese)
+            except Exception as exc:
+                ev.log("display_error", seq=seq, jp=japanese, vi=vietnamese, error=str(exc))
+            if vietnamese:
+                self._fire_webhook(seq, japanese, vietnamese)
+            return
+
         try:
             translations = self._translate_batch_flattened(batch)
         except Exception as exc:

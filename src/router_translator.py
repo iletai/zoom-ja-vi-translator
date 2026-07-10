@@ -28,8 +28,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -131,7 +133,14 @@ class RouterTranslator:
         # stays the last thing the model reads (Anthropic prompt-eng: most critical
         # instruction last). Appending after the sandwich would bury it under a
         # term dump and weaken the "output Vietnamese only" close.
-        base_prompt = str(config.ROUTER_SYSTEM_PROMPT)
+        # Auto-select the Haiku-tuned prompt when ZT_ROUTER_PROMPT is not set and the
+        # model name includes "haiku" — adds a completeness rule + domain examples that
+        # address Haiku's known truncation + domain-term failures. No-op when the user
+        # has set ZT_ROUTER_PROMPT (respects explicit override).
+        if "haiku" in self.model.lower() and not os.environ.get("ZT_ROUTER_PROMPT"):
+            base_prompt = str(config.ROUTER_HAIKU_SYSTEM_PROMPT)
+        else:
+            base_prompt = str(config.ROUTER_SYSTEM_PROMPT)
         glossary = _build_glossary_block()
         if glossary:
             block = f"<glossary>\nDùng đúng các bản dịch thuật ngữ sau: {glossary}\n</glossary>\n"
@@ -176,18 +185,19 @@ class RouterTranslator:
 
     # ---- public surface (mirrors NllbTranslator / LlmTranslator) ----------- #
 
-    def translate(self, text: str) -> str:
+    def translate(self, text: str, on_token: "Callable[[str], None] | None" = None) -> str:
         if not text or not text.strip():
             return ""
         if not config.TRANSLATE_SPLIT_SENTENCES:
-            return self._translate_one(text)
+            return self._translate_one(text, on_token=on_token)
         sentences = split_japanese_sentences(text)
         if len(sentences) <= 1:
-            return self._translate_one(sentences[0] if sentences else text)
-        # With context ON: sequential so each sentence enters history before the next.
-        # With context OFF: parallel — no ordering dependency, saves N-1 RTTs.
+            return self._translate_one(sentences[0] if sentences else text, on_token=on_token)
+        # Multi-sentence: on_token only wires to the first sentence to avoid
+        # interleaved partial display — subsequent sentences appear on commit.
         if self._keep_context:
-            parts = [self._translate_one(s) for s in sentences]
+            parts = [self._translate_one(s, on_token=on_token if i == 0 else None)
+                     for i, s in enumerate(sentences)]
         else:
             parts = self._translate_parallel(sentences)
         # A sentence that came back empty (timeout / refusal filter) must show a
@@ -269,7 +279,12 @@ class RouterTranslator:
                     out[i] = ""
         return out
 
-    def _translate_one(self, text: str, update_context: bool = True) -> str:
+    def _translate_one(
+        self,
+        text: str,
+        update_context: bool = True,
+        on_token: "Callable[[str], None] | None" = None,
+    ) -> str:
         if self._stopping.is_set():
             return ""
         cleaned = (text or "").strip()
@@ -294,7 +309,10 @@ class RouterTranslator:
         prepared = self._preprocess(cleaned)
 
         messages = self._build_messages(prepared)
-        raw = self._post_with_retry(messages)
+        if on_token is not None:
+            raw = self._post_streaming(messages, on_token)
+        else:
+            raw = self._post_with_retry(messages)
         result = self._clean(raw)
 
         if result and _looks_like_refusal_or_echo(prepared, result):
@@ -413,6 +431,49 @@ class RouterTranslator:
                 logger.warning("Router request failed (attempt %d/2): %s", attempt, exc)
         logger.error("Router translation gave up after 2 attempts: %s", last_exc)
         return ""
+
+    def _post_streaming(self, messages: list[dict[str, str]], on_token: Callable[[str], None]) -> str:
+        """POST with stream=True; fire on_token(chunk) for each SSE delta, return full text.
+
+        Falls back to non-streaming on any error so the caller always gets a result.
+        The 9router gateway may emit a trailing "data: [DONE]" line which is skipped.
+        """
+        if self._stopping.is_set():
+            return ""
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+        }
+        buf: list[str] = []
+        try:
+            with self._session.post(self.url, json=body, timeout=self.timeout, stream=True) as resp:
+                resp.raise_for_status()
+                for raw_line in resp.iter_lines():
+                    if self._stopping.is_set():
+                        break
+                    if not raw_line:
+                        continue
+                    line = raw_line if isinstance(raw_line, str) else raw_line.decode("utf-8", errors="replace")
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        delta = chunk["choices"][0]["delta"].get("content") or ""
+                    except (ValueError, KeyError, IndexError):
+                        continue
+                    if delta:
+                        buf.append(delta)
+                        on_token(delta)
+            return "".join(buf)
+        except Exception as exc:  # noqa: BLE001 - fall back to non-streaming
+            logger.warning("Router streaming failed, retrying non-streaming: %s", exc)
+            return self._post_with_retry(messages)
 
     @staticmethod
     def _extract(text: str) -> str:

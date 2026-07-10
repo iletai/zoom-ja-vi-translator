@@ -403,6 +403,11 @@ class _MultiDisplay:
         for d in self._displays:
             d.finalize_source(japanese)
 
+    def show_target_partial(self, partial_vi: str) -> None:
+        for d in self._displays:
+            if hasattr(d, "show_target_partial"):
+                d.show_target_partial(partial_vi)
+
     def show_target(self, vietnamese: str, japanese: str | None = None,
                     seq: int | None = None) -> None:
         for d in self._displays:
@@ -471,6 +476,15 @@ class WsDisplay:  # structurally satisfies SubtitleDisplay (duck-typed)
 
     def finalize_source(self, japanese: str) -> None:
         self._last_src = japanese or self._last_src
+
+    def show_target_partial(self, partial_vi: str) -> None:
+        if not partial_vi:
+            return
+        self._send({
+            "type": "engine/subtitle",
+            "payload": {"tsMs": _now_ms(), "srcText": self._last_src, "dstText": partial_vi,
+                        "partial": True, "segmentEnd": False},
+        })
 
     def show_target(self, vietnamese: str, japanese: str | None = None, seq: int | None = None) -> None:  # noqa: ARG002 - matches SubtitleDisplay interface (pipeline calls seq=...)
         src = japanese if japanese is not None else self._last_src

@@ -263,6 +263,23 @@ class SubtitleDisplay:
             self._partial_active = True
             self._maybe_scroll()
 
+    def show_target_partial(self, partial_vi: str) -> None:
+        """Overwrite the current line with the accumulated streaming VI translation.
+
+        Called repeatedly as tokens arrive from the API. When the full translation
+        is ready, ``show_target`` / ``show_pair`` commits and adds a newline.
+        Only active on TTY; on non-TTY output is silently skipped (finals still print).
+        """
+        if not partial_vi or not self._isatty:
+            return
+        avail = max(0, self._cols - self._display_width("  VI… ") - 1)
+        tail = self._truncate_tail(partial_vi, avail)
+        vi_line = (self._wrap(f"VI… {tail}", _VI_COLOR) if self._color else f"VI… {tail}")
+        with self._lock:
+            print(f"\r\033[K  {vi_line}", end="", flush=True)
+            self._partial_active = True
+            self._maybe_scroll()
+
     def finalize_source(self, japanese: str) -> None:
         """Commit the streamed Japanese line (print the final text + newline)."""
         timestamp = time.strftime("%H:%M:%S")

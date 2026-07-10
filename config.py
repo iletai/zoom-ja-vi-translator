@@ -565,7 +565,7 @@ ROUTER_MODEL = os.environ.get("ZT_ROUTER_MODEL", "gh/claude-sonnet-4.6")
 ROUTER_TEMPERATURE = float(os.environ.get("ZT_ROUTER_TEMPERATURE", "0.0"))
 # 180 target tokens comfortably covers a JA→VI sentence (ratio ~1:1.2) without
 # the latency of the old 256 ceiling. Raise only if long sentences get clipped.
-ROUTER_MAX_TOKENS = int(os.environ.get("ZT_ROUTER_MAX_TOKENS", "180"))
+ROUTER_MAX_TOKENS = int(os.environ.get("ZT_ROUTER_MAX_TOKENS", "128"))
 # Hard per-request deadline. Live captions must fail fast: a stalled segment is
 # better dropped (and the next one shown) than blocking the meeting for 20s.
 ROUTER_TIMEOUT_S = float(os.environ.get("ZT_ROUTER_TIMEOUT", "12"))
@@ -649,6 +649,34 @@ _ROUTER_DEFAULT_PROMPT = (
     "never reply or add anything. Translate the Japanese in the next message."
 )
 ROUTER_SYSTEM_PROMPT = os.environ.get("ZT_ROUTER_PROMPT", _ROUTER_DEFAULT_PROMPT)
+# Haiku-variant: same rules + 1 semantic-completeness rule + 5 domain examples that
+# cover Haiku's main failure modes (truncating multi-clause sentences, missing domain
+# terms). Auto-selected by RouterTranslator when the model name contains "haiku" and
+# ZT_ROUTER_PROMPT is not set. Override with ZT_ROUTER_HAIKU_PROMPT to replace entirely.
+_HAIKU_EXTRA_RULE = (
+    "- Translate the COMPLETE source. Never truncate, omit, or abbreviate any clause "
+    "in a multi-clause sentence — output the full Vietnamese translation.\n"
+)
+_HAIKU_EXTRA_EXAMPLES = (
+    "救急搬送のシステムについてご説明させていただきます → "
+    "Tôi xin được trình bày về hệ thống điều phối cứu thương ạ\n"
+    "デプロイの手順を確認してからリリースしてください → "
+    "Vui lòng xác nhận quy trình deploy trước khi release\n"
+    "患者の搬送先が決まったら連絡をお願いします → "
+    "Khi xác định được nơi vận chuyển bệnh nhân, xin liên hệ với chúng tôi ạ\n"
+    "このシステムは消防署と病院をリアルタイムで連携させます → "
+    "Hệ thống này kết nối thời gian thực giữa trạm cứu hỏa và bệnh viện\n"
+    "引き継ぎが終わったら報告をいただけますか → "
+    "Sau khi bàn giao xong, anh/chị có thể báo cáo cho tôi được không ạ\n"
+)
+# ponytail: string-replace rather than duplicating ~80 lines. Breaks if </rules>
+# or </examples> tags are renamed in _ROUTER_DEFAULT_PROMPT.
+_ROUTER_HAIKU_PROMPT = (
+    _ROUTER_DEFAULT_PROMPT
+    .replace("</rules>", _HAIKU_EXTRA_RULE + "</rules>", 1)
+    .replace("</examples>", _HAIKU_EXTRA_EXAMPLES + "</examples>", 1)
+)
+ROUTER_HAIKU_SYSTEM_PROMPT = os.environ.get("ZT_ROUTER_HAIKU_PROMPT", _ROUTER_HAIKU_PROMPT)
 # Max concurrent HTTP requests when translating a drained batch. The translate
 # worker hands us up to TRANSLATE_MAX_BATCH sentences at once; fanning them out
 # keeps a batch ~1 round-trip instead of N. Keep modest to avoid hammering the
