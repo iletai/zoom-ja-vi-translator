@@ -184,6 +184,68 @@ async def translate_ja_vi(text: str, fallback: str) -> str:
         return fallback
 
 
+_SUMMARY_SYSTEM_PROMPT = (
+    "Bạn là trợ lý ghi biên bản cuộc họp. Đầu vào là transcript song ngữ "
+    "Nhật→Việt của một cuộc họp (mỗi dòng: [JP] tiếng Nhật gốc / [VI] bản dịch). "
+    "Hãy viết một bản tóm tắt tiếng Việt gọn, chính xác để gửi cho team, gồm các "
+    "mục: **Bối cảnh**, **Nội dung chính** (gạch đầu dòng), **Quyết định**, "
+    "**Việc cần làm** (kèm người phụ trách nếu có), **Điểm còn để ngỏ**. "
+    "Chỉ dựa trên transcript, không bịa thêm. Nếu một chỗ không chắc do lỗi nhận "
+    "dạng giọng nói, đánh dấu (?). Trả lời bằng Markdown tiếng Việt, không lời dẫn."
+)
+
+
+def summarize_transcript(pairs: list[dict], timeout: float = 60.0) -> str:
+    """Summarize a bilingual transcript via the same 9router gateway.
+
+    ``pairs`` is a list of ``{"srcText", "dstText"}``. Reuses the RouterTranslator
+    config (base URL / key / model). Returns Markdown Vietnamese, or "" on failure.
+    """
+    lines = []
+    for p in pairs:
+        jp = (p.get("srcText") or "").strip()
+        vi = (p.get("dstText") or "").strip()
+        if jp or vi:
+            lines.append(f"[JP] {jp}\n[VI] {vi}")
+    if not lines:
+        return ""
+    transcript = "\n".join(lines)
+
+    try:
+        import config
+        base_url = str(config.ROUTER_BASE_URL).rstrip("/")
+        api_key = str(config.ROUTER_API_KEY)
+        model = str(config.ROUTER_MODEL)
+    except Exception:
+        base_url = os.environ.get("ZT_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1").rstrip("/")
+        api_key = os.environ.get("ZT_ROUTER_KEY", "")
+        model = os.environ.get("ZT_ROUTER_MODEL", "gh/claude-sonnet-4.6")
+
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": f"<transcript>\n{transcript}\n</transcript>"},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 1500,
+        "stream": False,
+    }
+    try:
+        import requests
+        resp = requests.post(
+            f"{base_url}/chat/completions", json=body, timeout=timeout,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+        # Gateway may append a trailing SSE marker; raw_decode reads just the first object.
+        payload, _ = json.JSONDecoder().raw_decode(resp.text.lstrip())
+        return str(payload["choices"][0]["message"]["content"] or "").strip()
+    except Exception as exc:  # noqa: BLE001 - summary is best-effort
+        logger.warning("Summarize failed: %s", exc)
+        return ""
+
+
 def _fire_webhook(_session_id: str, seq: int, japanese: str, vietnamese: str) -> None:
     """POST one translated pair to the webhook (fire-and-forget, pooled).
 
@@ -705,6 +767,8 @@ class Connection:
             await self._on_start(payload)
         elif mtype == "engine/stop":
             await self._on_stop()
+        elif mtype == "engine/summarize":
+            await self._on_summarize(payload)
         elif mtype == "engine/testDevice":
             await self.send({
                 "type": "engine/testResult",
@@ -770,6 +834,21 @@ class Connection:
         self._close_file_log()
         self._running = False
         await self._send_status(state="Idle")
+
+    async def _on_summarize(self, payload: dict) -> None:
+        """Summarize the session transcript (from the UI) via 9router, off-loop."""
+        pairs = payload.get("transcript") or []
+        if not isinstance(pairs, list) or not pairs:
+            await self.send({"type": "engine/summary",
+                             "payload": {"ok": False, "message": "Không có nội dung để tóm tắt."}})
+            return
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(None, summarize_transcript, pairs)
+        if text:
+            await self.send({"type": "engine/summary", "payload": {"ok": True, "text": text}})
+        else:
+            await self.send({"type": "engine/summary",
+                             "payload": {"ok": False, "message": "Tóm tắt thất bại (gateway 9router không phản hồi)."}})
 
 
 # --------------------------------------------------------------------------- #

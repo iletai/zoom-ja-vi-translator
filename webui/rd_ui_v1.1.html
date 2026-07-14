@@ -1059,6 +1059,10 @@
         autoSave:"自動保存（テキスト出力）間隔（ms）",
         theme:"テーマ", themeLight:"ライト", themeDark:"ダーク", uiLang:"UI言語",
         today:"今日", yesterday:"昨日",
+        summary:"要約", summaryBtn:"要約", summarizing:"要約中…",
+        summaryRunning:"会話の要約を作成しています…", summaryDone:"要約が完成しました。",
+        summaryFail:"要約に失敗しました。", summaryEmpty:"要約する内容がありません。",
+        summaryNoHost:"ホスト未接続のため要約できません。", summaryTitle:"会話の要約",
       },
       vi: {
         appTagline:"Phiên dịch đa ngôn ngữ thân thiện",
@@ -1082,6 +1086,10 @@
         autoSave:"Khoảng tự lưu (xuất text) (ms)",
         theme:"Giao diện", themeLight:"Sáng", themeDark:"Tối", uiLang:"Ngôn ngữ UI",
         today:"Hôm nay", yesterday:"Hôm qua",
+        summary:"Tóm tắt", summaryBtn:"Tóm tắt", summarizing:"Đang tóm tắt…",
+        summaryRunning:"Đang tạo bản tóm tắt cuộc hội thoại…", summaryDone:"Đã tạo bản tóm tắt.",
+        summaryFail:"Tóm tắt thất bại.", summaryEmpty:"Không có nội dung để tóm tắt.",
+        summaryNoHost:"Chưa kết nối host nên không tóm tắt được.", summaryTitle:"Tóm tắt cuộc hội thoại",
       },
       en: {
         appTagline:"Friendly multilingual interpreter",
@@ -1105,6 +1113,10 @@
         autoSave:"Auto-save (text output) interval (ms)",
         theme:"Theme", themeLight:"Light", themeDark:"Dark", uiLang:"UI language",
         today:"Today", yesterday:"Yesterday",
+        summary:"Summary", summaryBtn:"Summarize", summarizing:"Summarizing…",
+        summaryRunning:"Generating conversation summary…", summaryDone:"Summary ready.",
+        summaryFail:"Summary failed.", summaryEmpty:"Nothing to summarize.",
+        summaryNoHost:"No host connected; cannot summarize.", summaryTitle:"Conversation summary",
       },
     };
     const initialUiLang = (() => {
@@ -1392,6 +1404,8 @@
       showSource,
       copySeg,
       exportSessionJson,
+      requestSummary,
+      summarizingId,
     }){
       // group by day
       const groups = useMemo(() => {
@@ -1628,6 +1642,10 @@
                 <button className="btn" disabled={!selectedSession}>
                   SEG {selectedSession ? selectedSession.transcript.length : "-"}
                 </button>
+                <button className="btn" disabled={!selectedSession || summarizingId===selectedSession?.id}
+                        onClick={()=>requestSummary(selectedSession)}>
+                  {summarizingId===selectedSession?.id ? t("summaryRunning") : t("summary")}
+                </button>
                 <button className="btn btn-ghost" disabled={!selectedSession} onClick={()=>exportSessionJson(selectedSession)}>
                   JSON出力
                 </button>
@@ -1660,6 +1678,25 @@
                   })}
                   <div className="miniViewport" style={{ top: `${vp.top}%`, height: `${vp.height}%` }} />
                 </div>
+
+                {selectedSession.summary && (
+                  <div className="summaryBox" style={{
+                    margin:"0 0 10px", padding:"12px 14px", borderRadius:10,
+                    background:"var(--color-surface-2, rgba(127,127,127,.08))",
+                    border:"1px solid var(--color-border, rgba(127,127,127,.25))",
+                  }}>
+                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6}}>
+                      <div style={{fontWeight:900}}>{t("summaryTitle")}</div>
+                      <button className="btn btn-ghost" onClick={()=>{
+                        navigator.clipboard?.writeText(selectedSession.summary);
+                      }}>COPY</button>
+                    </div>
+                    <pre style={{whiteSpace:"pre-wrap", wordBreak:"break-word", margin:0,
+                                 fontFamily:"inherit", fontSize:13, lineHeight:1.55}}>
+                      {selectedSession.summary}
+                    </pre>
+                  </div>
+                )}
 
                 <div className="detailScroll" ref={scrollRef}>
                   {segs.length === 0 ? (
@@ -1865,6 +1902,9 @@
       const [selectedSessionId, setSelectedSessionId] = useState(null);
       const [selectedHistSegId, setSelectedHistSegId] = useState(null);
 
+      // which session is waiting on a summary from the host (null = none)
+      const [summarizingId, setSummarizingId] = useState(null);
+
       useEffect(() => { saveJson("speaksy.sessions", sessions); }, [sessions]);
 
       // load server-side history (JSONL files) and merge into sessions
@@ -2009,6 +2049,14 @@
         HostBridge.post({ type:"engine/stop" });
 
         if (activeSessionId) {
+          // Build the summary transcript now (state updates below are async, so
+          // read the session + append the final flush line by hand).
+          const flushSrc = sentenceBuf.srcAcc.trim();
+          const flushDst = sentenceBuf.dstAcc.trim();
+          const base = (activeSession?.transcript ?? []).slice().reverse()
+            .map(s => ({ srcText: s.srcText || "", dstText: s.dstText || "" }));
+          if (flushSrc || flushDst) base.push({ srcText: flushSrc, dstText: flushDst });
+
           setSentenceBuf(prev => {
             const src = prev.srcAcc.trim();
             const dst = prev.dstAcc.trim();
@@ -2024,6 +2072,13 @@
             return { ...prev, srcAcc:"", dstAcc:"" };
           });
           finishSession(activeSessionId, "done");
+
+          // Auto-summarize on stop (best-effort; needs the 9router gateway).
+          if (base.length && HostBridge.hasHost()) {
+            setSummarizingId(activeSessionId);
+            toast.show({ variant:"info", title:t("summary"), description:t("summaryRunning") });
+            HostBridge.post({ type:"engine/summarize", payload:{ sessionId: activeSessionId, transcript: base } });
+          }
         }
 
         toast.show({ variant:"info", title:"Speaksy", description:"翻訳を停止しました。" });
@@ -2051,6 +2106,24 @@
         URL.revokeObjectURL(url);
         toast.show({ variant:"info", title:"JSON出力", description:"セッションJSONをダウンロードしました。" });
       }, [toast]);
+
+      // Ask the host to summarize a session's transcript (JA→VI via 9router).
+      const requestSummary = useCallback((session) => {
+        if (!session) return;
+        if (!HostBridge.hasHost()) {
+          toast.show({ variant:"info", title:t("summary"), description:t("summaryNoHost") });
+          return;
+        }
+        const pairs = session.transcript.slice().reverse()
+          .map(s => ({ srcText: s.srcText || "", dstText: s.dstText || "" }));
+        if (!pairs.length) {
+          toast.show({ variant:"info", title:t("summary"), description:t("summaryEmpty") });
+          return;
+        }
+        setSummarizingId(session.id);
+        toast.show({ variant:"info", title:t("summary"), description:t("summaryRunning") });
+        HostBridge.post({ type:"engine/summarize", payload:{ sessionId: session.id, transcript: pairs } });
+      }, [toast, t]);
 
       const requestDeviceTest = useCallback(() => {
         if (!HostBridge.hasHost()) {
@@ -2183,6 +2256,18 @@
             }
           }
 
+          if (msg.type === "engine/summary") {
+            const p = msg.payload || {};
+            const sid = p.sessionId || summarizingId;
+            setSummarizingId(null);
+            if (p.ok && p.text) {
+              if (sid) updateSession(sid, (s) => ({ ...s, summary: p.text, summaryTsMs: Date.now() }));
+              toast.show({ variant:"success", title:t("summary"), description:t("summaryDone") });
+            } else {
+              toast.show({ variant:"danger", title:t("summary"), description: p.message || t("summaryFail"), duration:6000 });
+            }
+          }
+
           if (msg.type === "engine/error") {
             const m = msg.payload?.message ?? "エラーが発生しました";
             setLastError({ tsMs: Date.now(), message: m });
@@ -2201,7 +2286,7 @@
         HostBridge.post({ type:"engine/listDevices" });
 
         return () => off && off();
-      }, [toast, partialResults, activeSessionId, pushTranscript, pushMetrics, finishSession]);
+      }, [toast, partialResults, activeSessionId, pushTranscript, pushMetrics, finishSession, summarizingId, updateSession, t]);
 
       // demo generator
       useEffect(() => {
@@ -2370,6 +2455,8 @@
                   showSource={showSource}
                   copySeg={copySeg}
                   exportSessionJson={exportSessionJson}
+                  requestSummary={requestSummary}
+                  summarizingId={summarizingId}
                 />
               )}
 
